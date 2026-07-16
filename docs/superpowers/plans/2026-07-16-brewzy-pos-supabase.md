@@ -1,10 +1,10 @@
-# Brewzy POS — Supabase Sales Backend Implementation Plan
+# Brewzy POS — Supabase Backend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Consolidate the duplicate POS files into one clean set and persist every completed sale to a Supabase `sales` table so daily reports are durable and shared across tills, while the menu stays per-device in `localStorage`.
+**Goal:** Consolidate the duplicate POS files into one clean set and move both the menu (products) and completed sales into Supabase, so every till shares one menu (add/edit/delete) and daily reports are durable and shared across tills.
 
-**Architecture:** Zero-build static site (HTML/CSS/JS) on GitHub Pages. Pure POS logic lives in `pos-core.js` (browser global `PosCore`, also `require`-able in Node for tests). All Supabase network access lives in `supabase-api.js` (browser global `PosApi`). `app.js` is DOM wiring only and delegates to `PosCore` and `PosApi`. Reports aggregate line items **by product name** so items from different devices merge.
+**Architecture:** Zero-build static site (HTML/CSS/JS) on GitHub Pages. Pure POS logic lives in `pos-core.js` (browser global `PosCore`, also `require`-able in Node for tests). All Supabase network access lives in `supabase-api.js` (browser global `PosApi`). `app.js` is DOM wiring only and delegates to `PosCore` and `PosApi`. Products load from Supabase on startup (with a `localStorage` read-through cache for offline resilience); reports aggregate line items **by product name**.
 
 **Tech Stack:** Vanilla JS, `@supabase/supabase-js@2` (CDN), Supabase Postgres + RLS, `node --test` (built-in) for unit tests, GitHub Pages for hosting.
 
@@ -15,20 +15,20 @@
 - Currency is MVR, formatted as `MVR 0.00` (two decimals). Tax rate is `0.08` (8%).
 - Supabase URL and **publishable (anon)** key stay in client code (safe to expose; RLS governs access). URL: `https://uxpcnpkxathduehpqkyq.supabase.co`, key: `sb_publishable_9Xou20b2C_H--LCbqEw11A_DDLvtqNQ`.
 - Do not rename existing DOM element IDs in `index.html` — `app.js` binds to them.
-- Menu (products) stays in `localStorage` under key `touchPosProducts`. No products table.
-- Report product rows are keyed by item **name**, never by ID.
+- Products live in a Supabase `products` table; `localStorage` key `touchPosProducts` is only a read-through cache.
+- Sale line `items` and report product rows are keyed by item **name**, never by ID.
 - Sale rows use device-**local** date (`localDateKey`) for `sale_date`.
-- On a failed sale save, the cart MUST be preserved — never silent data loss.
+- On a failed sale save, the cart MUST be preserved — never silent data loss. On a failed product write, do not mutate local state optimistically.
 
 ## File Structure (end state)
 
 - `index.html` — markup + dialogs (already present); loads scripts in order: supabase CDN → `pos-core.js` → `supabase-api.js` → `app.js`.
 - `styles.css` — all styles including the report dialog styles (merged in).
-- `pos-core.js` — **new.** Pure functions: `money`, `localDateKey`, `calcTotals`, `cartToItems`, `aggregateSales`. No DOM, no network.
-- `supabase-api.js` — **new.** Supabase client + `insertSale`, `fetchSalesByDate`, `deleteSalesByDate`.
+- `pos-core.js` — **new.** Pure functions: `money`, `localDateKey`, `calcTotals`, `cartToItems`, `aggregateSales`, `productError`. No DOM, no network.
+- `supabase-api.js` — **new.** Supabase client + product CRUD (`fetchProducts`, `insertProduct`, `updateProduct`, `deleteProduct`) + sales (`insertSale`, `fetchSalesByDate`, `deleteSalesByDate`).
 - `app.js` — DOM wiring; delegates logic to `PosCore` and network to `PosApi`.
 - `tests/pos-core.test.js` — **new.** `node --test` unit tests for `pos-core.js`.
-- `supabase/schema.sql` — **new.** Table + RLS DDL to run in the Supabase SQL editor.
+- `supabase/schema.sql` — **new.** Tables + RLS + optional seed to run in the Supabase SQL editor.
 - `README.md` — updated: features, local run, Supabase setup, GitHub Pages deploy.
 - **Deleted:** `app_updated.js`, `index_updated.html`, `styles_updated.css`, `README_updated.md`.
 
@@ -36,7 +36,7 @@
 
 ### Task 1: Pure POS logic module (`pos-core.js`) with unit tests
 
-Extract all pure logic into a testable module before touching the DOM. The key correctness change vs. the current `app_updated.js` is that `aggregateSales` rolls products up **by name**, so the same item rung from two devices (which have different local IDs) merges into one report row.
+Extract all pure logic into a testable module before touching the DOM. The key correctness point vs. the old `app_updated.js` is that `aggregateSales` rolls products up **by name**, so the same item sold via different product rows still merges into one report row. `productError` centralizes the Manage-Items validation.
 
 **Files:**
 - Create: `pos-core.js`
@@ -51,6 +51,7 @@ Extract all pure logic into a testable module before touching the DOM. The key c
   - `calcTotals(cart: {price:number, qty:number}[], taxRate?: number) => {subtotal:number, tax:number, total:number}`
   - `cartToItems(cart: {name:string, price:number, qty:number}[]) => {name:string, price:number, qty:number}[]`
   - `aggregateSales(sales: {payment_method:string, total:number, items:{name:string,price:number,qty:number}[]}[]) => {paymentTotals:{Cash:number,Card:number,Transfer:number}, grandTotal:number, transactionCount:number, itemCount:number, productRows:{name:string,qty:number,sales:number}[]}`
+  - `productError(fields: {name:string, price:number, category:string}) => string|null` — returns an error message, or `null` if valid
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -65,6 +66,7 @@ const {
   calcTotals,
   cartToItems,
   aggregateSales,
+  productError,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals", () => {
@@ -74,8 +76,7 @@ test("money formats as MVR with two decimals", () => {
 });
 
 test("localDateKey returns local YYYY-MM-DD (not UTC)", () => {
-  // 16 July 2026, 23:30 local time; month arg is 0-based
-  const d = new Date(2026, 6, 16, 23, 30);
+  const d = new Date(2026, 6, 16, 23, 30); // 16 Jul 2026 23:30 local; month is 0-based
   assert.equal(localDateKey(d), "2026-07-16");
 });
 
@@ -121,8 +122,15 @@ test("aggregateSales merges products by name across sales", () => {
   const brownie = r.productRows.find((p) => p.name === "Brownie");
   assert.equal(brownie.qty, 2);
   assert.equal(brownie.sales, 70);
-  // sorted by qty desc: Brownie (2) before Sausage (2)? tie -> name asc
-  assert.equal(r.productRows[0].name, "Brownie");
+  assert.equal(r.productRows[0].name, "Brownie"); // qty tie -> name asc
+});
+
+test("productError returns null for valid input, message for invalid", () => {
+  assert.equal(productError({ name: "Latte", price: 30, category: "Drinks" }), null);
+  assert.equal(typeof productError({ name: "", price: 30, category: "Drinks" }), "string");
+  assert.equal(typeof productError({ name: "X", price: -1, category: "Drinks" }), "string");
+  assert.equal(typeof productError({ name: "X", price: NaN, category: "Drinks" }), "string");
+  assert.equal(typeof productError({ name: "X", price: 30, category: "" }), "string");
 });
 ```
 
@@ -167,7 +175,7 @@ Create `pos-core.js`:
   }
 
   // Roll an array of sale rows up into report figures. Products are keyed by
-  // NAME so identical items rung from different devices merge into one row.
+  // NAME so identical items merge into one row.
   function aggregateSales(sales) {
     const paymentTotals = { Cash: 0, Card: 0, Transfer: 0 };
     const products = new Map();
@@ -202,7 +210,19 @@ Create `pos-core.js`:
     };
   }
 
-  const api = { TAX_RATE, money, localDateKey, calcTotals, cartToItems, aggregateSales };
+  function productError(fields) {
+    const name = (fields.name || "").trim();
+    const category = (fields.category || "").trim();
+    const price = Number(fields.price);
+    if (!name || !category || !Number.isFinite(price) || price < 0) {
+      return "Please enter a valid name, category, and price.";
+    }
+    return null;
+  }
+
+  const api = {
+    TAX_RATE, money, localDateKey, calcTotals, cartToItems, aggregateSales, productError,
+  };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
@@ -215,7 +235,7 @@ Create `pos-core.js`:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `node --test tests/pos-core.test.js`
-Expected: PASS — 5 tests, 0 failures.
+Expected: PASS — 6 tests, 0 failures.
 
 - [ ] **Step 5: Commit**
 
@@ -228,23 +248,40 @@ git commit -m "Add pos-core pure logic module with unit tests"
 
 ### Task 2: Supabase schema + documentation
 
-Provide the DDL the shop owner runs once in the Supabase SQL editor, and update the README with setup and deployment steps. This is a committed artifact plus a manual apply step; it has no automated test.
+Provide the DDL the shop owner runs once in the Supabase SQL editor (products + sales tables, RLS, and an optional starting-menu seed), and update the README with setup and deployment steps. This is a committed artifact plus a manual apply step; it has no automated test.
 
 **Files:**
 - Create: `supabase/schema.sql`
 - Modify: `README.md` (full rewrite)
 
 **Interfaces:**
-- Produces: a `public.sales` table with columns `id, created_at, sale_date, payment_method, subtotal, tax, total, items` and anon `select`/`insert`/`delete` RLS policies. Task 3's `supabase-api.js` depends on exactly these column names.
+- Produces: a `public.products` table (`id, created_at, name, price, category, emoji`) with anon `select`/`insert`/`update`/`delete`, and a `public.sales` table (`id, created_at, sale_date, payment_method, subtotal, tax, total, items`) with anon `select`/`insert`/`delete`. Task 3's `supabase-api.js` depends on exactly these column names.
 
 - [ ] **Step 1: Create the schema file**
 
 Create `supabase/schema.sql`:
 
 ```sql
--- Brewzy POS — sales table + open (anon) RLS policies.
+-- Brewzy POS — tables + open (anon) RLS policies.
 -- Run this once in the Supabase dashboard: SQL Editor -> New query -> Run.
 
+-- Products (the shared menu)
+create table if not exists public.products (
+  id         uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  name       text not null,
+  price      numeric not null,
+  category   text not null,
+  emoji      text
+);
+
+alter table public.products enable row level security;
+create policy "anon read products"   on public.products for select to anon using (true);
+create policy "anon insert products" on public.products for insert to anon with check (true);
+create policy "anon update products" on public.products for update to anon using (true) with check (true);
+create policy "anon delete products" on public.products for delete to anon using (true);
+
+-- Sales
 create table if not exists public.sales (
   id             uuid primary key default gen_random_uuid(),
   created_at     timestamptz not null default now(),
@@ -257,17 +294,25 @@ create table if not exists public.sales (
 );
 
 alter table public.sales enable row level security;
-
-create policy "anon can read sales"
-  on public.sales for select to anon using (true);
-
-create policy "anon can insert sales"
-  on public.sales for insert to anon with check (true);
-
-create policy "anon can delete sales"
-  on public.sales for delete to anon using (true);
+create policy "anon read sales"   on public.sales for select to anon using (true);
+create policy "anon insert sales" on public.sales for insert to anon with check (true);
+create policy "anon delete sales" on public.sales for delete to anon using (true);
 
 create index if not exists sales_sale_date_idx on public.sales (sale_date);
+
+-- Optional one-time seed of the starting menu.
+-- Run this block ONCE; re-running it duplicates the items.
+insert into public.products (name, price, category, emoji) values
+  ('Submarine', 20, 'Kulhi', '🍔'),
+  ('Boava', 25, 'Kulhi', '🍔'),
+  ('Rihaakuru roshi', 12, 'Kulhi', '🍫'),
+  ('Brownie bits', 65, 'Desserts', '🍫'),
+  ('Brownie', 35, 'Desserts', '🍫'),
+  ('Cookie Bits', 50, 'Desserts', '🍫'),
+  ('Tres leches', 40, 'Desserts', '🍫'),
+  ('Sausage', 10, 'Kulhi', '🍔'),
+  ('Metaa gandu', 20, 'Desserts', '🍰'),
+  ('Ice Cream', 35, 'Desserts', '🍨');
 ```
 
 - [ ] **Step 2: Rewrite `README.md`**
@@ -278,13 +323,13 @@ Replace the entire contents of `README.md` with:
 # Brewzy POS
 
 A simple, touch-friendly point-of-sale web app for a small food counter
-(prices in MVR). Runs as static files on GitHub Pages. Completed sales are
-saved to Supabase so daily reports are shared across tills; the menu is kept
-per-device in the browser.
+(prices in MVR). Runs as static files on GitHub Pages. The menu and all
+completed sales are stored in Supabase, so every till shares one menu and
+daily reports are shared across devices.
 
 ## Features
 - Touch-friendly item buttons, search, and category filters
-- Add / edit / delete menu items (stored per-device in `localStorage`)
+- Shared menu stored in Supabase — add / edit / delete items from any till
 - Cart with quantity controls, automatic subtotal, 8% tax, and total
 - Cash / Transfer / Card payment, with cash-received and change calculation
 - Every completed sale saved to Supabase
@@ -294,11 +339,14 @@ per-device in the browser.
 ## Supabase setup (once)
 1. In your Supabase project, open **SQL Editor → New query**.
 2. Paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
-3. That creates the `sales` table and open row-level-security policies.
+3. That creates the `products` and `sales` tables, open row-level-security
+   policies, and seeds a starting menu. (Re-running the seed block duplicates
+   the menu items — run it only once.)
 
 The Supabase URL and publishable (anon) key live in `supabase-api.js`. These are
 safe to expose in client code — row-level security governs access. Access is
-open (no login): anyone with the site URL can read, add, and delete sales.
+open (no login): anyone with the site URL can read, add, edit, and delete the
+menu and sales.
 
 ## Run locally
 Use a small local server (needed so the browser can load Supabase):
@@ -320,27 +368,29 @@ node --test tests/pos-core.test.js
 ## Notes
 - Card payments are recorded, not charged — there is no real card processing.
 - Changing the tax rate: edit `TAX_RATE` in `pos-core.js`.
+- The menu is loaded from Supabase on startup and cached in the browser
+  (`localStorage`) so a brief connection drop doesn't empty the till's menu.
 ````
 
 - [ ] **Step 3: Apply the schema in Supabase (manual)**
 
 Open the Supabase dashboard for project `uxpcnpkxathduehpqkyq`, go to SQL Editor, paste `supabase/schema.sql`, and Run.
-Expected: "Success. No rows returned." Then **Table Editor** shows a `sales` table.
+Expected: "Success. No rows returned." Then **Table Editor** shows `products` (10 seeded rows) and `sales` tables.
 
-> If you do not have dashboard access, hand `supabase/schema.sql` to whoever does. Task 3's end-to-end verification cannot pass until this table exists.
+> If you do not have dashboard access, hand `supabase/schema.sql` to whoever does. Task 3's end-to-end verification cannot pass until these tables exist.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add supabase/schema.sql README.md
-git commit -m "Add Supabase sales schema and update README"
+git commit -m "Add Supabase products + sales schema and update README"
 ```
 
 ---
 
 ### Task 3: Integrate — Supabase API, app rewrite, style merge, delete duplicates
 
-Wire everything together: a network module, an `app.js` that uses `PosCore` + `PosApi`, the merged report styles, corrected script tags, and removal of the duplicate files. Verified end-to-end in a browser against the live Supabase table from Task 2.
+Wire everything together: a network module with product + sales access, an `app.js` that loads the menu from Supabase (with a cache fallback) and reads/writes products and sales, merged report styles, corrected script tags, and removal of the duplicate files. Verified end-to-end in a browser against the live Supabase tables from Task 2.
 
 **Files:**
 - Create: `supabase-api.js`
@@ -348,8 +398,12 @@ Wire everything together: a network module, an `app.js` that uses `PosCore` + `P
 - Delete: `app_updated.js`, `index_updated.html`, `styles_updated.css`, `README_updated.md`
 
 **Interfaces:**
-- Consumes: `PosCore` from Task 1; the `sales` table from Task 2.
+- Consumes: `PosCore` from Task 1; the `products` and `sales` tables from Task 2.
 - Produces (browser global `PosApi`):
+  - `fetchProducts() => Promise<product[]>` — ordered by `created_at` asc (throws on error)
+  - `insertProduct(product: {name, price, category, emoji}) => Promise<void>` (throws on error)
+  - `updateProduct(id: string, fields: {name, price, category, emoji}) => Promise<void>` (throws on error)
+  - `deleteProduct(id: string) => Promise<void>` (throws on error)
   - `insertSale(sale: {sale_date, payment_method, subtotal, tax, total, items}) => Promise<void>` (throws on error)
   - `fetchSalesByDate(dateKey: string) => Promise<sale[]>` (throws on error)
   - `deleteSalesByDate(dateKey: string) => Promise<void>` (throws on error)
@@ -357,13 +411,39 @@ Wire everything together: a network module, an `app.js` that uses `PosCore` + `P
 - [ ] **Step 1: Create `supabase-api.js`**
 
 ```js
-// supabase-api.js — all Supabase network access for sales.
+// supabase-api.js — all Supabase network access.
 // Exposes window.PosApi. Requires the supabase-js UMD global (loaded before this).
 const SUPABASE_URL = "https://uxpcnpkxathduehpqkyq.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Xou20b2C_H--LCbqEw11A_DDLvtqNQ";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+// --- Products ---
+async function fetchProducts() {
+  const { data, error } = await supabaseClient
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertProduct(product) {
+  const { error } = await supabaseClient.from("products").insert(product);
+  if (error) throw error;
+}
+
+async function updateProduct(id, fields) {
+  const { error } = await supabaseClient.from("products").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteProduct(id) {
+  const { error } = await supabaseClient.from("products").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// --- Sales ---
 async function insertSale(sale) {
   const { error } = await supabaseClient.from("sales").insert(sale);
   if (error) throw error;
@@ -384,7 +464,10 @@ async function deleteSalesByDate(dateKey) {
   if (error) throw error;
 }
 
-window.PosApi = { insertSale, fetchSalesByDate, deleteSalesByDate };
+window.PosApi = {
+  fetchProducts, insertProduct, updateProduct, deleteProduct,
+  insertSale, fetchSalesByDate, deleteSalesByDate,
+};
 ```
 
 - [ ] **Step 2: Replace `app.js`**
@@ -395,30 +478,35 @@ Replace the entire contents of `app.js` with:
 // app.js — DOM wiring for Brewzy POS.
 // Pure logic: pos-core.js (PosCore). Supabase access: supabase-api.js (PosApi).
 
-const { money, localDateKey, calcTotals, cartToItems, aggregateSales } = PosCore;
+const { money, localDateKey, calcTotals, cartToItems, aggregateSales, productError } = PosCore;
 
-const defaultProducts = [
-  { id: crypto.randomUUID(), name: "Submarine", price: 20, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Boava", price: 25, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Rihaakuru roshi", price: 12, category: "Kulhi", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Brownie bits", price: 65, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Brownie", price: 35, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Cookie Bits", price: 50, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Tres leches", price: 40, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Sausage", price: 10, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Metaa gandu", price: 20, category: "Desserts", emoji: "🍰" },
-  { id: crypto.randomUUID(), name: "Ice Cream", price: 35, category: "Desserts", emoji: "🍨" }
-];
+const PRODUCTS_CACHE_KEY = "touchPosProducts";
 
-let products = JSON.parse(localStorage.getItem("touchPosProducts")) || defaultProducts;
+let products = JSON.parse(localStorage.getItem(PRODUCTS_CACHE_KEY)) || [];
 let cart = [];
 let activeCategory = "All";
 let paymentMethod = "Cash";
 
 const $ = (id) => document.getElementById(id);
 
-function saveProducts() {
-  localStorage.setItem("touchPosProducts", JSON.stringify(products));
+function cacheProducts() {
+  localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products));
+}
+
+// Load the shared menu from Supabase; fall back to the cached copy if offline.
+async function loadProducts() {
+  try {
+    const rows = await PosApi.fetchProducts();
+    products = rows.map((p) => ({ ...p, price: Number(p.price) }));
+    cacheProducts();
+  } catch (err) {
+    console.error("Failed to load products:", err);
+    products = JSON.parse(localStorage.getItem(PRODUCTS_CACHE_KEY)) || [];
+    if (!products.length) {
+      alert("Couldn't load the menu and no cached copy is available. Check your connection and reload.");
+    }
+  }
+  renderAll();
 }
 
 function renderCategories() {
@@ -537,15 +625,7 @@ function renderManageList() {
   });
 
   document.querySelectorAll(".delete-item").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const product = products.find(p => p.id === btn.dataset.id);
-      if (product && confirm(`Delete "${product.name}"?`)) {
-        products = products.filter(p => p.id !== btn.dataset.id);
-        cart = cart.filter(i => i.id !== btn.dataset.id);
-        saveProducts();
-        renderAll();
-      }
-    });
+    btn.addEventListener("click", () => deleteItem(btn.dataset.id));
   });
 }
 
@@ -568,30 +648,51 @@ function resetItemForm() {
   $("itemName").focus();
 }
 
-function saveItem() {
+async function saveItem() {
   const name = $("itemName").value.trim();
   const price = Number($("itemPrice").value);
   const category = $("itemCategory").value.trim();
   const emoji = $("itemEmoji").value.trim() || "🍽️";
   const editingId = $("editingId").value;
 
-  if (!name || !category || !Number.isFinite(price) || price < 0) {
-    alert("Please enter a valid name, category, and price.");
+  const error = productError({ name, price, category });
+  if (error) {
+    alert(error);
     return;
   }
 
-  if (editingId) {
-    const product = products.find(p => p.id === editingId);
-    Object.assign(product, { name, price, category, emoji });
-    const cartItem = cart.find(i => i.id === editingId);
-    if (cartItem) Object.assign(cartItem, { name, price, category, emoji });
-  } else {
-    products.push({ id: crypto.randomUUID(), name, price, category, emoji });
+  const saveBtn = $("saveItemBtn");
+  saveBtn.disabled = true;
+  try {
+    if (editingId) {
+      await PosApi.updateProduct(editingId, { name, price, category, emoji });
+    } else {
+      await PosApi.insertProduct({ name, price, category, emoji });
+    }
+  } catch (err) {
+    console.error("Failed to save product:", err);
+    alert("Couldn't save the item — check your connection and try again.");
+    saveBtn.disabled = false;
+    return;
   }
 
-  saveProducts();
+  saveBtn.disabled = false;
   resetItemForm();
-  renderAll();
+  await loadProducts(); // re-renders everything, including the manage list
+}
+
+async function deleteItem(id) {
+  const product = products.find(p => p.id === id);
+  if (!product || !confirm(`Delete "${product.name}"?`)) return;
+  try {
+    await PosApi.deleteProduct(id);
+  } catch (err) {
+    console.error("Failed to delete product:", err);
+    alert("Couldn't delete the item — check your connection and try again.");
+    return;
+  }
+  cart = cart.filter(i => i.id !== id);
+  await loadProducts();
 }
 
 async function processPayment() {
@@ -760,7 +861,8 @@ $("newOrderBtn").addEventListener("click", () => {
   renderCart();
 });
 
-renderAll();
+renderAll();     // instant paint from cached menu (if any)
+loadProducts();  // refresh the shared menu from Supabase
 ```
 
 - [ ] **Step 3: Append the report styles to `styles.css`**
@@ -818,7 +920,7 @@ Append the following to the end of `styles.css` (these are the styles currently 
 
 - [ ] **Step 4: Fix the script tags in `index.html`**
 
-Replace the single line:
+Replace the single block:
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -847,23 +949,27 @@ Start a local server and open the app (Supabase blocks `file://` origins, so a s
 Run: `python -m http.server 8000` (from the repo root), then open `http://localhost:8000`.
 
 Verify each, watching the browser devtools Console for errors:
-1. **Loads clean:** product grid renders, categories show, no console errors. `window.PosCore` and `window.PosApi` are defined (type them in the console).
-2. **Cart math:** tap items; subtotal, 8% tax, total, and the Pay button label update. Quantity +/− works; removing all of an item drops the row.
-3. **Menu management (local):** open Manage Items, add an item, confirm it appears in the grid; reload the page and confirm it persists (localStorage).
-4. **Payment method toggle:** Cash shows the cash-received field with live change; Transfer/Card hide it.
-5. **Save a Cash sale:** add items, enter enough cash, press Pay → receipt dialog shows correct total and change; cart clears. In Supabase **Table Editor → sales**, a new row appears with matching `total`, `payment_method='Cash'`, today's `sale_date`, and an `items` array of `{name,price,qty}`.
-6. **Save Card and Transfer sales:** repeat for each; rows appear with the right `payment_method`.
-7. **Report aggregates by name across IDs:** open Daily Report for today. Totals per method, transaction count, and items sold match what you rang. To prove name-keyed merge: in devtools run `localStorage.removeItem('touchPosProducts'); location.reload();` (regenerates product IDs), ring another sale of an item you sold before, reopen the report — that product shows as **one** row with the combined quantity, not two.
-8. **Clear This Day:** press it, confirm → the report re-queries and shows zeros / "No sales recorded"; the rows are gone from the Supabase table.
-9. **Save-failure keeps the cart:** in devtools go offline (Network tab → Offline), add items, press Pay → an alert appears, the cart is still populated, and Pay is re-enabled. Go back online and Pay succeeds.
+1. **Loads clean:** the seeded menu (10 items) renders from Supabase, categories show, no console errors. `window.PosCore` and `window.PosApi` are defined (type them in the console).
+2. **Add a product:** open Manage Items → add a new item (e.g. "Latte", 30, "Drinks", ☕) → it appears in the grid and manage list. In Supabase **Table Editor → products**, the row exists.
+3. **Shared menu:** open the app in a second browser/incognito window → the new item is present (loaded from Supabase, not local).
+4. **Edit a product:** change its price → after save, the grid and manage list show the new price; the Supabase row is updated; a reload keeps it.
+5. **Delete a product:** delete it → it disappears from the grid/list and from the Supabase table; reload confirms.
+6. **Offline menu fallback:** with the menu loaded once, open devtools Network → Offline, then reload → the app still shows the cached menu (from `localStorage`), no empty grid.
+7. **Cart math:** tap items; subtotal, 8% tax, total, and the Pay button label update. Quantity +/− works; removing all of an item drops the row.
+8. **Payment method toggle:** Cash shows the cash-received field with live change; Transfer/Card hide it.
+9. **Save a Cash sale:** add items, enter enough cash, press Pay → receipt dialog shows correct total and change; cart clears. In **Table Editor → sales**, a new row appears with matching `total`, `payment_method='Cash'`, today's `sale_date`, and an `items` array of `{name,price,qty}`.
+10. **Save Card and Transfer sales:** repeat for each; rows appear with the right `payment_method`.
+11. **Report aggregates by name:** open Daily Report for today. Totals per method, transaction count, and items sold match what you rang; the same item rung twice shows as one row with combined quantity.
+12. **Clear This Day:** press it, confirm → the report re-queries and shows zeros / "No sales recorded"; the rows are gone from the Supabase `sales` table.
+13. **Sale-failure keeps the cart:** in devtools go Offline, add items, press Pay → an alert appears, the cart is still populated, and Pay is re-enabled. Go back online and Pay succeeds.
 
-All nine must pass. If any fails, fix before committing.
+All thirteen must pass. If any fails, fix before committing.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add supabase-api.js app.js styles.css index.html
-git commit -m "Integrate Supabase sales persistence; consolidate duplicate files"
+git commit -m "Move menu + sales to Supabase; consolidate duplicate files"
 ```
 
 ---
@@ -871,17 +977,19 @@ git commit -m "Integrate Supabase sales persistence; consolidate duplicate files
 ## Self-Review
 
 **Spec coverage:**
+- Shared menu in Supabase, add/edit/delete → Task 2 `products` table + Task 3 `loadProducts`/`saveItem`/`deleteItem`. ✓
+- `localStorage` as read-through cache only → Task 3 `cacheProducts`/`loadProducts` fallback. ✓
 - Consolidate to one file set / delete `_updated` → Task 3 (steps 4–5). ✓
-- Menu stays in `localStorage` → Task 3 `app.js` unchanged product logic. ✓
-- `sales` table + insert/select/delete RLS for anon → Task 2. ✓
+- `sales` table + insert/select/delete RLS; `products` select/insert/update/delete RLS → Task 2. ✓
 - Sale saved on payment, cart preserved on failure → Task 3 `processPayment`. ✓
+- Product write failure not applied optimistically → Task 3 `saveItem`/`deleteItem` (reload only on success). ✓
 - Report reads from Supabase, aggregates by name → Task 1 `aggregateSales` + Task 3 `renderSalesReport`. ✓
 - Clear This Day deletes server rows → Task 3 `clearReportBtn` handler. ✓
-- Error states (save/startup/report) → Task 3 `processPayment`, `setReportError`. ✓
+- Error states (product load, product write, sale save, report) → Task 3 `loadProducts`, `saveItem`, `deleteItem`, `processPayment`, `setReportError`. ✓
 - Local date key → Task 1 `localDateKey`, used in `processPayment`. ✓
 - README with SQL + GitHub Pages steps → Task 2. ✓
 - Keys client-side → Task 3 `supabase-api.js`. ✓
 
 **Placeholder scan:** No TBD/TODO; all code blocks are complete.
 
-**Type consistency:** `insertSale` receives `{sale_date, payment_method, subtotal, tax, total, items}` — matches the `sales` columns (Task 2) and `aggregateSales` input shape (`payment_method`, `total`, `items[].{name,price,qty}`) (Task 1). `PosCore` destructuring in `app.js` matches the exports in `pos-core.js`. Script load order in `index.html` satisfies dependencies (`supabase` → `PosCore`/`PosApi` → `app.js`).
+**Type consistency:** `insertProduct`/`updateProduct` receive `{name, price, category, emoji}` — matching the `products` columns (Task 2). `fetchProducts` rows are normalized (`price: Number(...)`) before use in `calcTotals`/`money`. `insertSale` receives `{sale_date, payment_method, subtotal, tax, total, items}` — matches `sales` columns (Task 2) and `aggregateSales` input shape (Task 1). `productError` is called with `{name, price, category}` matching its signature. `PosCore` destructuring in `app.js` matches the exports in `pos-core.js`. Script load order in `index.html` satisfies dependencies (`supabase` → `PosCore`/`PosApi` → `app.js`).
