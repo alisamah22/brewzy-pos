@@ -6,8 +6,20 @@ const supabaseClient = supabase.createClient(
   SUPABASE_PUBLISHABLE_KEY
 );
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
+async function testSupabaseConnection() {
+  const { data, error } = await supabaseClient
+    .from("sales")
+    .select("*")
+    .limit(1);
+
+  if (error) {
+    console.error("❌ Supabase connection failed:", error);
+  } else {
+    console.log("✅ Supabase connected successfully:", data);
+  }
+}
+
+testSupabaseConnection();
 
 const TAX_RATE = 0.08;
 
