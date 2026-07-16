@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Touch POS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>Touch POS</h1>
+        <p>Fast food counter</p>
+      </div>
+      <button class="secondary" id="manageItemsBtn">＋ Manage Items</button>
+    </header>
+
+    <main class="layout">
+      <section class="products-panel">
+        <div class="toolbar">
+          <input id="searchInput" type="search" placeholder="Search items..." />
+          <div id="categoryFilters" class="categories"></div>
+        </div>
+        <div id="productGrid" class="product-grid"></div>
+      </section>
+
+      <aside class="cart-panel">
+        <div class="cart-heading">
+          <div>
+            <h2>Current Order</h2>
+            <span id="itemCount">0 items</span>
+          </div>
+          <button class="danger-text" id="clearCartBtn">Clear</button>
+        </div>
+
+        <div id="cartItems" class="cart-items">
+          <div class="empty-state">
+            <div class="empty-icon">🛒</div>
+            <strong>No items added</strong>
+            <span>Tap a food item to begin</span>
+          </div>
+        </div>
+
+        <div class="summary">
+          <div><span>Subtotal</span><strong id="subtotal">MVR 0.00</strong></div>
+          <div><span>Tax <small>(8%)</small></span><strong id="tax">MVR 0.00</strong></div>
+          <div class="total"><span>Total</span><strong id="total">MVR 0.00</strong></div>
+        </div>
+
+        <div class="payment-title">Payment Method</div>
+        <div class="payment-options">
+          <button class="payment active" data-method="Cash">💵<span>Cash</span></button>
+          <button class="payment" data-method="Transfer">📱<span>Transfer</span></button>
+          <button class="payment" data-method="Card">💳<span>Card</span></button>
+        </div>
+
+        <div id="cashSection" class="cash-section">
+          <label>Cash received</label>
+          <input id="cashReceived" inputmode="decimal" type="number" min="0" step="0.01" placeholder="0.00" />
+          <div class="change-row"><span>Change</span><strong id="changeDue">MVR 0.00</strong></div>
+        </div>
+
+        <button class="pay-btn" id="payBtn">Pay MVR 0.00</button>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="itemDialog">
+    <form method="dialog" class="modal">
+      <div class="modal-header">
+        <div>
+          <h2>Manage Items</h2>
+          <p>Add new products or edit existing ones.</p>
+        </div>
+        <button class="icon-btn" value="cancel">✕</button>
+      </div>
+
+      <input type="hidden" id="editingId" />
+      <div class="form-grid">
+        <label>
+          Item name
+          <input id="itemName" required placeholder="e.g. Chicken Burger" />
+        </label>
+        <label>
+          Price (MVR)
+          <input id="itemPrice" required type="number" min="0" step="0.01" placeholder="75" />
+        </label>
+        <label>
+          Category
+          <input id="itemCategory" required placeholder="e.g. Burgers" />
+        </label>
+        <label>
+          Emoji / icon
+          <input id="itemEmoji" maxlength="4" placeholder="🍔" />
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="resetFormBtn">New Item</button>
+        <button type="button" class="primary" id="saveItemBtn">Save Item</button>
+      </div>
+
+      <div class="item-list-heading">Existing Items</div>
+      <div id="manageItemList" class="manage-list"></div>
+    </form>
+  </dialog>
+
+  <dialog id="receiptDialog">
+    <div class="modal receipt-modal">
+      <div class="receipt-icon">✓</div>
+      <h2>Payment Successful</h2>
+      <p id="receiptText"></p>
+      <button class="primary full" id="newOrderBtn">Start New Order</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
