@@ -363,6 +363,7 @@ $("manageItemsBtn").addEventListener("click", () => {
   $("itemDialog").showModal();
 });
 
+$("closeItemDialogBtn").addEventListener("click", () => $("itemDialog").close());
 $("saveItemBtn").addEventListener("click", saveItem);
 $("resetFormBtn").addEventListener("click", resetItemForm);
 $("cashReceived").addEventListener("input", updateChange);
