@@ -1,25 +1,50 @@
-# Touch POS
+# Brewzy POS
 
-A simple browser-based touch POS front end for food sales.
+A simple, touch-friendly point-of-sale web app for a small food counter
+(prices in MVR). Runs as static files on GitHub Pages. The menu and all
+completed sales are stored in Supabase, so every till shares one menu and
+daily reports are shared across devices.
 
 ## Features
-- Touch-friendly food item buttons
-- Search and category filters
-- Add, edit, and delete products
-- Cart quantity controls
-- Automatic subtotal, 8% tax, and total
-- Cash, bank transfer, and card payment options
-- Cash received and change calculation
-- Products saved in browser localStorage
-- Responsive desktop, tablet, and mobile layout
+- Touch-friendly item buttons, search, and category filters
+- Shared menu stored in Supabase — add / edit / delete items from any till
+- Cart with quantity controls, automatic subtotal, 8% tax, and total
+- Cash / Transfer / Card payment, with cash-received and change calculation
+- Every completed sale saved to Supabase
+- Daily sales report (per payment method, transactions, items sold, and
+  per-product quantities) read from Supabase, with a "Clear This Day" action
 
-## Run
-Open `index.html` in Chrome, Edge, Firefox, or Safari.
+## Supabase setup (once)
+1. In your Supabase project, open **SQL Editor → New query**.
+2. Paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
+3. That creates the `products` and `sales` tables, open row-level-security
+   policies, and seeds a starting menu. (Re-running the seed block duplicates
+   the menu items — run it only once.)
 
-For best results, use a small local server:
-- VS Code: install Live Server, then open `index.html`
-- Python: run `python -m http.server 8000` in this folder and visit `http://localhost:8000`
+The Supabase URL and publishable (anon) key live in `supabase-api.js`. These are
+safe to expose in client code — row-level security governs access. Access is
+open (no login): anyone with the site URL can read, add, edit, and delete the
+menu and sales.
+
+## Run locally
+Use a small local server (needed so the browser can load Supabase):
+- Python: `python -m http.server 8000`, then open `http://localhost:8000`
+- VS Code: the Live Server extension, then open `index.html`
+
+## Deploy (GitHub Pages)
+1. Push to the default branch of your GitHub repo.
+2. Repo **Settings → Pages → Build and deployment**: Source = *Deploy from a
+   branch*, Branch = your default branch, Folder = `/ (root)`.
+3. Wait for the Pages build; open the published URL.
+
+## Tests
+Pure logic in `pos-core.js` has unit tests:
+```
+node --test tests/pos-core.test.js
+```
 
 ## Notes
-This is a front-end demo. It does not process real card payments or save completed sales to a database.
-Change `TAX_RATE` in `app.js` to modify the tax percentage.
+- Card payments are recorded, not charged — there is no real card processing.
+- Changing the tax rate: edit `TAX_RATE` in `pos-core.js`.
+- The menu is loaded from Supabase on startup and cached in the browser
+  (`localStorage`) so a brief connection drop doesn't empty the till's menu.
