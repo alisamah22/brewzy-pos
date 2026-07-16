@@ -1,51 +1,35 @@
-const SUPABASE_URL = "https://uxpcnpkxathduehpqkyq.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Xou20b2C_H--LCbqEw11A_DDLvtqNQ";
+// app.js — DOM wiring for Brewzy POS.
+// Pure logic: pos-core.js (PosCore). Supabase access: supabase-api.js (PosApi).
 
-const supabaseClient = supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
-);
+const { money, localDateKey, calcTotals, cartToItems, aggregateSales, productError } = PosCore;
 
-async function testSupabaseConnection() {
-  const { data, error } = await supabaseClient
-    .from("sales")
-    .select("*")
-    .limit(1);
+const PRODUCTS_CACHE_KEY = "touchPosProducts";
 
-  if (error) {
-    console.error("❌ Supabase connection failed:", error);
-  } else {
-    console.log("✅ Supabase connected successfully:", data);
-  }
-}
-
-testSupabaseConnection();
-
-const TAX_RATE = 0.08;
-
-const defaultProducts = [
-  { id: crypto.randomUUID(), name: "Submarine", price: 20, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Boava", price: 25, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Rihaakuru roshi", price: 12, category: "Kulhi", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Brownie bits", price: 65, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Brownie", price: 35, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Cookie Bits", price: 50, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Tres leches", price: 40, category: "Desserts", emoji: "🍫" },
-  { id: crypto.randomUUID(), name: "Sausage", price: 10, category: "Kulhi", emoji: "🍔" },
-  { id: crypto.randomUUID(), name: "Metaa gandu", price: 20, category: "Desserts", emoji: "🍰" },
-  { id: crypto.randomUUID(), name: "Ice Cream", price: 35, category: "Desserts", emoji: "🍨" }
-];
-
-let products = JSON.parse(localStorage.getItem("touchPosProducts")) || defaultProducts;
+let products = JSON.parse(localStorage.getItem(PRODUCTS_CACHE_KEY)) || [];
 let cart = [];
 let activeCategory = "All";
 let paymentMethod = "Cash";
 
 const $ = (id) => document.getElementById(id);
-const money = (value) => `MVR ${Number(value).toFixed(2)}`;
 
-function saveProducts() {
-  localStorage.setItem("touchPosProducts", JSON.stringify(products));
+function cacheProducts() {
+  localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products));
+}
+
+// Load the shared menu from Supabase; fall back to the cached copy if offline.
+async function loadProducts() {
+  try {
+    const rows = await PosApi.fetchProducts();
+    products = rows.map((p) => ({ ...p, price: Number(p.price) }));
+    cacheProducts();
+  } catch (err) {
+    console.error("Failed to load products:", err);
+    products = JSON.parse(localStorage.getItem(PRODUCTS_CACHE_KEY)) || [];
+    if (!products.length) {
+      alert("Couldn't load the menu and no cached copy is available. Check your connection and reload.");
+    }
+  }
+  renderAll();
 }
 
 function renderCategories() {
@@ -105,12 +89,6 @@ function updateQty(id, change) {
   renderCart();
 }
 
-function totals() {
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const tax = subtotal * TAX_RATE;
-  return { subtotal, tax, total: subtotal + tax };
-}
-
 function renderCart() {
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
   $("itemCount").textContent = `${count} item${count === 1 ? "" : "s"}`;
@@ -138,7 +116,7 @@ function renderCart() {
     btn.addEventListener("click", () => updateQty(btn.dataset.id, Number(btn.dataset.change)));
   });
 
-  const t = totals();
+  const t = calcTotals(cart);
   $("subtotal").textContent = money(t.subtotal);
   $("tax").textContent = money(t.tax);
   $("total").textContent = money(t.total);
@@ -148,7 +126,7 @@ function renderCart() {
 }
 
 function updateChange() {
-  const total = totals().total;
+  const total = calcTotals(cart).total;
   const received = Number($("cashReceived").value || 0);
   $("changeDue").textContent = money(Math.max(0, received - total));
 }
@@ -170,15 +148,7 @@ function renderManageList() {
   });
 
   document.querySelectorAll(".delete-item").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const product = products.find(p => p.id === btn.dataset.id);
-      if (product && confirm(`Delete "${product.name}"?`)) {
-        products = products.filter(p => p.id !== btn.dataset.id);
-        cart = cart.filter(i => i.id !== btn.dataset.id);
-        saveProducts();
-        renderAll();
-      }
-    });
+    btn.addEventListener("click", () => deleteItem(btn.dataset.id));
   });
 }
 
@@ -201,35 +171,56 @@ function resetItemForm() {
   $("itemName").focus();
 }
 
-function saveItem() {
+async function saveItem() {
   const name = $("itemName").value.trim();
   const price = Number($("itemPrice").value);
   const category = $("itemCategory").value.trim();
   const emoji = $("itemEmoji").value.trim() || "🍽️";
   const editingId = $("editingId").value;
 
-  if (!name || !category || !Number.isFinite(price) || price < 0) {
-    alert("Please enter a valid name, category, and price.");
+  const error = productError({ name, price, category });
+  if (error) {
+    alert(error);
     return;
   }
 
-  if (editingId) {
-    const product = products.find(p => p.id === editingId);
-    Object.assign(product, { name, price, category, emoji });
-    const cartItem = cart.find(i => i.id === editingId);
-    if (cartItem) Object.assign(cartItem, { name, price, category, emoji });
-  } else {
-    products.push({ id: crypto.randomUUID(), name, price, category, emoji });
+  const saveBtn = $("saveItemBtn");
+  saveBtn.disabled = true;
+  try {
+    if (editingId) {
+      await PosApi.updateProduct(editingId, { name, price, category, emoji });
+    } else {
+      await PosApi.insertProduct({ name, price, category, emoji });
+    }
+  } catch (err) {
+    console.error("Failed to save product:", err);
+    alert("Couldn't save the item — check your connection and try again.");
+    saveBtn.disabled = false;
+    return;
   }
 
-  saveProducts();
+  saveBtn.disabled = false;
   resetItemForm();
-  renderAll();
+  await loadProducts(); // re-renders everything, including the manage list
 }
 
-function processPayment() {
+async function deleteItem(id) {
+  const product = products.find(p => p.id === id);
+  if (!product || !confirm(`Delete "${product.name}"?`)) return;
+  try {
+    await PosApi.deleteProduct(id);
+  } catch (err) {
+    console.error("Failed to delete product:", err);
+    alert("Couldn't delete the item — check your connection and try again.");
+    return;
+  }
+  cart = cart.filter(i => i.id !== id);
+  await loadProducts();
+}
+
+async function processPayment() {
   if (!cart.length) return;
-  const t = totals();
+  const t = calcTotals(cart);
 
   if (paymentMethod === "Cash") {
     const received = Number($("cashReceived").value || 0);
@@ -240,16 +231,91 @@ function processPayment() {
     }
   }
 
+  const payBtn = $("payBtn");
+  const originalLabel = payBtn.textContent;
+  payBtn.disabled = true;
+  payBtn.textContent = "Saving…";
+
+  const sale = {
+    sale_date: localDateKey(),
+    payment_method: paymentMethod,
+    subtotal: t.subtotal,
+    tax: t.tax,
+    total: t.total,
+    items: cartToItems(cart),
+  };
+
+  try {
+    await PosApi.insertSale(sale);
+  } catch (err) {
+    console.error("Failed to save sale:", err);
+    alert("Couldn't save the sale — check your internet connection and try again.");
+    payBtn.disabled = false;
+    payBtn.textContent = originalLabel;
+    return; // keep cart intact — no data loss
+  }
+
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
   let message = `${count} item${count === 1 ? "" : "s"} paid by ${paymentMethod}.<br><strong>Total: ${money(t.total)}</strong>`;
-
   if (paymentMethod === "Cash") {
     const change = Number($("cashReceived").value) - t.total;
     message += `<br>Change: ${money(change)}`;
   }
 
+  cart = [];
+  $("cashReceived").value = "";
+  renderCart(); // resets pay button label + disabled state
   $("receiptText").innerHTML = message;
   $("receiptDialog").showModal();
+}
+
+async function openSalesReport() {
+  $("reportDate").value = localDateKey();
+  $("salesReportDialog").showModal();
+  await renderSalesReport();
+}
+
+function setReportLoading() {
+  $("productSalesBody").innerHTML = `<tr><td colspan="3" class="report-empty">Loading…</td></tr>`;
+}
+
+function setReportError() {
+  ["reportCash", "reportCard", "reportTransfer", "reportTotal"].forEach(id => {
+    $(id).textContent = money(0);
+  });
+  $("reportTransactions").textContent = "0";
+  $("reportItems").textContent = "0";
+  $("productSalesBody").innerHTML = `<tr><td colspan="3" class="report-empty">Couldn't load sales — check your connection and try again.</td></tr>`;
+}
+
+async function renderSalesReport() {
+  const selectedDate = $("reportDate").value || localDateKey();
+  setReportLoading();
+
+  let sales;
+  try {
+    sales = await PosApi.fetchSalesByDate(selectedDate);
+  } catch (err) {
+    console.error("Failed to load report:", err);
+    setReportError();
+    return;
+  }
+
+  const r = aggregateSales(sales);
+  $("reportCash").textContent = money(r.paymentTotals.Cash || 0);
+  $("reportCard").textContent = money(r.paymentTotals.Card || 0);
+  $("reportTransfer").textContent = money(r.paymentTotals.Transfer || 0);
+  $("reportTotal").textContent = money(r.grandTotal);
+  $("reportTransactions").textContent = r.transactionCount;
+  $("reportItems").textContent = r.itemCount;
+
+  $("productSalesBody").innerHTML = r.productRows.length ? r.productRows.map(item => `
+    <tr>
+      <td>${escapeHtml(item.name)}</td>
+      <td>${item.qty}</td>
+      <td>${money(item.sales)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="3" class="report-empty">No sales recorded for this date.</td></tr>`;
 }
 
 function renderAll() {
@@ -277,6 +343,22 @@ $("clearCartBtn").addEventListener("click", () => {
   }
 });
 
+$("salesReportBtn").addEventListener("click", openSalesReport);
+$("closeSalesReportBtn").addEventListener("click", () => $("salesReportDialog").close());
+$("reportDate").addEventListener("change", renderSalesReport);
+$("clearReportBtn").addEventListener("click", async () => {
+  const selectedDate = $("reportDate").value || localDateKey();
+  if (!confirm(`Clear all saved sales for ${selectedDate}?`)) return;
+  try {
+    await PosApi.deleteSalesByDate(selectedDate);
+  } catch (err) {
+    console.error("Failed to clear sales:", err);
+    alert("Couldn't clear sales — check your connection and try again.");
+    return;
+  }
+  await renderSalesReport();
+});
+
 $("manageItemsBtn").addEventListener("click", () => {
   renderManageList();
   $("itemDialog").showModal();
@@ -302,5 +384,5 @@ $("newOrderBtn").addEventListener("click", () => {
   renderCart();
 });
 
-renderAll();
-
+renderAll();     // instant paint from cached menu (if any)
+loadProducts();  // refresh the shared menu from Supabase
