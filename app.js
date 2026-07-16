@@ -304,5 +304,3 @@ $("newOrderBtn").addEventListener("click", () => {
 
 renderAll();
 
-</body>
-</html>
