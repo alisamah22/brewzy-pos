@@ -35,8 +35,8 @@ async function loadProducts() {
 function renderCategories() {
   const categories = ["All", ...new Set(products.map(p => p.category))];
   $("categoryFilters").innerHTML = categories.map(category => `
-    <button class="category-btn ${activeCategory === category ? "active" : ""}" data-category="${category}">
-      ${category}
+    <button class="category-btn ${activeCategory === category ? "active" : ""}" data-category="${escapeHtml(category)}">
+      ${escapeHtml(category)}
     </button>
   `).join("");
 
@@ -59,7 +59,7 @@ function renderProducts() {
 
   $("productGrid").innerHTML = filtered.length ? filtered.map(product => `
     <button class="product-card" data-id="${product.id}">
-      <div class="product-emoji">${product.emoji || "🍽️"}</div>
+      <div class="product-emoji">${escapeHtml(product.emoji || "🍽️")}</div>
       <span class="product-name">${escapeHtml(product.name)}</span>
       <span class="product-category">${escapeHtml(product.category)}</span>
       <span class="product-price">${money(product.price)}</span>
@@ -135,7 +135,7 @@ function renderManageList() {
   $("manageItemList").innerHTML = products.map(product => `
     <div class="manage-row">
       <div>
-        <strong>${product.emoji || "🍽️"} ${escapeHtml(product.name)}</strong>
+        <strong>${escapeHtml(product.emoji || "🍽️")} ${escapeHtml(product.name)}</strong>
         <small>${escapeHtml(product.category)} · ${money(product.price)}</small>
       </div>
       <button type="button" class="small-btn edit-item" data-id="${product.id}">Edit</button>
