@@ -1,8 +1,6 @@
 // pos-core.js — pure POS logic. No DOM, no network.
 // Exposed as window.PosCore in the browser and module.exports in Node.
 (function (root) {
-  const TAX_RATE = 0.08;
-
   function money(value) {
     return `MVR ${Number(value).toFixed(2)}`;
   }
@@ -14,10 +12,9 @@
     return `${year}-${month}-${day}`;
   }
 
-  function calcTotals(cart, taxRate = TAX_RATE) {
+  function calcTotals(cart) {
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-    const tax = subtotal * taxRate;
-    return { subtotal, tax, total: subtotal + tax };
+    return { subtotal, tax: 0, total: subtotal };
   }
 
   function cartToItems(cart) {
@@ -75,7 +72,7 @@
   }
 
   const api = {
-    TAX_RATE, money, localDateKey, calcTotals, cartToItems, aggregateSales, productError,
+    money, localDateKey, calcTotals, cartToItems, aggregateSales, productError,
   };
 
   if (typeof module !== "undefined" && module.exports) {

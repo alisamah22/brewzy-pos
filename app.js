@@ -118,7 +118,6 @@ function renderCart() {
 
   const t = calcTotals(cart);
   $("subtotal").textContent = money(t.subtotal);
-  $("tax").textContent = money(t.tax);
   $("total").textContent = money(t.total);
   $("payBtn").textContent = `Pay ${money(t.total)}`;
   $("payBtn").disabled = cart.length === 0;
@@ -364,6 +363,7 @@ $("manageItemsBtn").addEventListener("click", () => {
   $("itemDialog").showModal();
 });
 
+$("closeItemDialogBtn").addEventListener("click", () => $("itemDialog").close());
 $("saveItemBtn").addEventListener("click", saveItem);
 $("resetFormBtn").addEventListener("click", resetItemForm);
 $("cashReceived").addEventListener("input", updateChange);
