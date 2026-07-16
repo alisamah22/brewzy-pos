@@ -8,7 +8,7 @@ daily reports are shared across devices.
 ## Features
 - Touch-friendly item buttons, search, and category filters
 - Shared menu stored in Supabase — add / edit / delete items from any till
-- Cart with quantity controls, automatic subtotal, 8% tax, and total
+- Cart with quantity controls and automatic total
 - Cash / Transfer / Card payment, with cash-received and change calculation
 - Every completed sale saved to Supabase
 - Daily sales report (per payment method, transactions, items sold, and
@@ -45,6 +45,5 @@ node --test tests/pos-core.test.js
 
 ## Notes
 - Card payments are recorded, not charged — there is no real card processing.
-- Changing the tax rate: edit `TAX_RATE` in `pos-core.js`.
 - The menu is loaded from Supabase on startup and cached in the browser
   (`localStorage`) so a brief connection drop doesn't empty the till's menu.

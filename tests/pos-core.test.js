@@ -20,15 +20,15 @@ test("localDateKey returns local YYYY-MM-DD (not UTC)", () => {
   assert.equal(localDateKey(d), "2026-07-16");
 });
 
-test("calcTotals sums subtotal, 8% tax, and total", () => {
+test("calcTotals returns subtotal as total with no tax", () => {
   const cart = [
     { price: 20, qty: 2 },
     { price: 10, qty: 1 },
   ];
-  const t = calcTotals(cart, 0.08);
+  const t = calcTotals(cart);
   assert.equal(t.subtotal, 50);
-  assert.equal(t.tax, 4);
-  assert.equal(t.total, 54);
+  assert.equal(t.tax, 0);
+  assert.equal(t.total, 50);
 });
 
 test("cartToItems strips everything except name/price/qty", () => {
