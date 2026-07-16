@@ -1,5 +1,13 @@
 -- Brewzy POS — tables + open (anon) RLS policies.
 -- Run this once in the Supabase dashboard: SQL Editor -> New query -> Run.
+--
+-- Troubleshooting: if you get "column ... does not exist" (e.g. sale_date),
+-- a `sales` or `products` table already exists from earlier experimentation.
+-- `create table if not exists` skips it, keeping the old (wrong) columns.
+-- If those tables hold no data you need, reset them first, then re-run this
+-- script from the top:
+--   drop table if exists public.sales cascade;
+--   drop table if exists public.products cascade;
 
 -- Products (the shared menu)
 create table if not exists public.products (
