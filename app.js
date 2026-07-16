@@ -1,3 +1,14 @@
+const SUPABASE_URL = "https://uxpcnpkxathduehpqkyq.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Xou20b2C_H--LCbqEw11A_DDLvtqNQ";
+
+const supabaseClient = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+
 const TAX_RATE = 0.08;
 
 const defaultProducts = [
@@ -280,3 +291,7 @@ $("newOrderBtn").addEventListener("click", () => {
 });
 
 renderAll();
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
