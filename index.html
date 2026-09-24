@@ -3,159 +3,244 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Touch POS</title>
+  <meta name="theme-color" content="#ef6c35" />
+  <title>Brewzy POS</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div>
-        <h1>Touch POS</h1>
-        <p>Fast food counter</p>
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">☕</div>
+        <div>
+          <h1>Brewzy POS</h1>
+          <p id="clock">&nbsp;</p>
+        </div>
       </div>
       <div class="topbar-actions">
-        <button class="secondary" id="salesReportBtn">📊 Daily Report</button>
-        <button class="secondary" id="manageItemsBtn">＋ Manage Items</button>
+        <span id="syncStatus" class="status-pill" role="status" aria-live="polite">Connecting…</span>
+        <button class="secondary" id="salesReportBtn">📊 <span>Reports</span></button>
+        <button class="secondary" id="manageItemsBtn">🍽️ <span>Manage Items</span></button>
       </div>
     </header>
 
     <main class="layout">
-      <section class="products-panel">
+      <section class="products-panel" aria-label="Menu">
         <div class="toolbar">
-          <input id="searchInput" type="search" placeholder="Search items..." />
-          <div id="categoryFilters" class="categories"></div>
+          <div class="search-wrap">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input id="searchInput" type="search" placeholder="Search items…  ( / )" autocomplete="off" aria-label="Search items" />
+          </div>
+          <div id="categoryFilters" class="categories" role="tablist" aria-label="Categories"></div>
         </div>
-        <div id="productGrid" class="product-grid"></div>
+        <div id="productGrid" class="product-grid">
+          <div class="empty-state"><div class="spinner"></div><span>Loading menu…</span></div>
+        </div>
       </section>
 
-      <aside class="cart-panel">
+      <aside class="cart-panel" id="cartPanel" aria-label="Current order">
         <div class="cart-heading">
           <div>
             <h2>Current Order</h2>
             <span id="itemCount">0 items</span>
           </div>
-          <button class="danger-text" id="clearCartBtn">Clear</button>
+          <button class="danger-text" id="clearCartBtn">Clear all</button>
         </div>
 
-        <div id="cartItems" class="cart-items">
-          <div class="empty-state">
-            <div class="empty-icon">🛒</div>
-            <strong>No items added</strong>
-            <span>Tap a food item to begin</span>
-          </div>
-        </div>
+        <div id="cartItems" class="cart-items"></div>
 
         <div class="summary">
-          <div><span>Subtotal</span><strong id="subtotal">MVR 0.00</strong></div>
           <div class="total"><span>Total</span><strong id="total">MVR 0.00</strong></div>
         </div>
 
-        <div class="payment-title">Payment Method</div>
-        <div class="payment-options">
-          <button class="payment active" data-method="Cash">💵<span>Cash</span></button>
-          <button class="payment" data-method="Transfer">📱<span>Transfer</span></button>
-          <button class="payment" data-method="Card">💳<span>Card</span></button>
+        <div class="payment-title">Payment method</div>
+        <div class="payment-options" role="radiogroup" aria-label="Payment method">
+          <button class="payment active" data-method="Cash" role="radio" aria-checked="true">💵<span>Cash</span></button>
+          <button class="payment" data-method="Transfer" role="radio" aria-checked="false">📱<span>Transfer</span></button>
+          <button class="payment" data-method="Card" role="radio" aria-checked="false">💳<span>Card</span></button>
         </div>
 
         <div id="cashSection" class="cash-section">
-          <label>Cash received</label>
-          <input id="cashReceived" inputmode="decimal" type="number" min="0" step="0.01" placeholder="0.00" />
-          <div class="change-row"><span>Change</span><strong id="changeDue">MVR 0.00</strong></div>
+          <label for="cashReceived">Cash received</label>
+          <div id="quickCash" class="quick-cash"></div>
+          <input id="cashReceived" inputmode="decimal" type="number" min="0" step="0.01" placeholder="Type amount or tap above" />
+          <div class="change-row" id="changeRow"><span id="changeLabel">Change to give</span><strong id="changeDue">MVR 0.00</strong></div>
         </div>
 
-        <button class="pay-btn" id="payBtn">Pay MVR 0.00</button>
+        <button class="pay-btn" id="payBtn" disabled>Add items to start</button>
       </aside>
     </main>
+
+    <!-- Mobile: always-visible order summary that jumps to the cart -->
+    <button class="mobile-cart-bar" id="mobileCartBar" type="button" hidden>
+      <span id="mobileCartCount">0 items</span>
+      <strong id="mobileCartTotal">MVR 0.00</strong>
+      <span>View order ›</span>
+    </button>
   </div>
 
-  <dialog id="itemDialog">
-    <form method="dialog" class="modal">
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
+  <!-- Manage items -->
+  <dialog id="itemDialog" class="wide">
+    <div class="modal">
       <div class="modal-header">
         <div>
           <h2>Manage Items</h2>
-          <p>Add new products or edit existing ones.</p>
+          <p>Add menu items with their buying and selling price.</p>
         </div>
-        <button type="button" class="icon-btn" id="closeItemDialogBtn">✕</button>
+        <button type="button" class="icon-btn" id="closeItemDialogBtn" aria-label="Close">✕</button>
       </div>
 
-      <input type="hidden" id="editingId" />
-      <div class="form-grid">
-        <label>
-          Item name
-          <input id="itemName" required placeholder="e.g. Chicken Burger" />
-        </label>
-        <label>
-          Price (MVR)
-          <input id="itemPrice" required type="number" min="0" step="0.01" placeholder="75" />
-        </label>
-        <label>
-          Category
-          <input id="itemCategory" required placeholder="e.g. Burgers" />
-        </label>
-        <label>
-          Emoji / icon
-          <input id="itemEmoji" maxlength="4" placeholder="🍔" />
-        </label>
-      </div>
+      <div class="manage-layout">
+        <div class="item-form" id="itemForm">
+          <div class="form-title" id="formTitle">Add a new item</div>
+          <input type="hidden" id="editingId" />
+          <div class="form-grid">
+            <label class="span-2">
+              Item name
+              <input id="itemName" placeholder="e.g. Chicken Burger" autocomplete="off" />
+            </label>
+            <label>
+              Category
+              <input id="itemCategory" list="categoryOptions" placeholder="e.g. Kulhi" autocomplete="off" />
+              <datalist id="categoryOptions"></datalist>
+            </label>
+            <label>
+              Emoji / icon
+              <input id="itemEmoji" maxlength="8" placeholder="🍔" autocomplete="off" />
+            </label>
+            <div class="emoji-picks span-2" id="emojiPicks"></div>
+            <label>
+              Buying price (MVR)
+              <input id="itemCost" type="number" inputmode="decimal" min="0" step="0.01" placeholder="What it costs you" />
+            </label>
+            <label>
+              Selling price (MVR)
+              <input id="itemPrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="What the customer pays" />
+            </label>
+          </div>
+          <div class="margin-preview" id="marginPreview">Enter both prices to see the profit per item.</div>
+          <div class="modal-actions">
+            <button type="button" class="secondary" id="resetFormBtn">Cancel</button>
+            <button type="button" class="primary" id="saveItemBtn">Add Item</button>
+          </div>
+        </div>
 
-      <div class="modal-actions">
-        <button type="button" class="secondary" id="resetFormBtn">New Item</button>
-        <button type="button" class="primary" id="saveItemBtn">Save Item</button>
+        <div class="item-list-panel">
+          <div class="list-heading">
+            <span>Menu items <small id="manageCount"></small></span>
+            <input id="manageSearch" type="search" placeholder="Filter…" autocomplete="off" aria-label="Filter items" />
+          </div>
+          <div id="manageItemList" class="manage-list"></div>
+        </div>
       </div>
-
-      <div class="item-list-heading">Existing Items</div>
-      <div id="manageItemList" class="manage-list"></div>
-    </form>
+    </div>
   </dialog>
 
+  <!-- Receipt -->
   <dialog id="receiptDialog">
     <div class="modal receipt-modal">
       <div class="receipt-icon">✓</div>
-      <h2>Payment Successful</h2>
-      <p id="receiptText"></p>
-      <button class="primary full" id="newOrderBtn">Start New Order</button>
+      <h2>Payment successful</h2>
+      <div id="receiptBody" class="receipt"></div>
+      <div class="receipt-actions">
+        <button class="secondary" id="printReceiptBtn" type="button">🖨️ Print</button>
+        <button class="primary" id="newOrderBtn" type="button">Start new order</button>
+      </div>
     </div>
   </dialog>
 
-
-  <dialog id="salesReportDialog">
-    <div class="modal report-modal">
+  <!-- Reports -->
+  <dialog id="salesReportDialog" class="wide">
+    <div class="modal report-modal" id="reportDialogBody">
       <div class="modal-header">
         <div>
-          <h2>Daily Sales Report</h2>
-          <p>Cash, card, transfer, and product quantities sold.</p>
+          <h2>Sales Report</h2>
+          <p id="reportSubtitle">Sales, profit and best sellers.</p>
         </div>
-        <button class="icon-btn" id="closeSalesReportBtn" type="button">✕</button>
+        <button class="icon-btn" id="closeSalesReportBtn" type="button" aria-label="Close">✕</button>
       </div>
 
       <div class="report-toolbar">
-        <label>
-          Report date
-          <input id="reportDate" type="date" />
-        </label>
-        <button class="secondary" id="clearReportBtn" type="button">Clear This Day</button>
+        <div class="segmented" id="rangePresets" role="group" aria-label="Date range">
+          <button type="button" data-preset="today" class="active">Today</button>
+          <button type="button" data-preset="yesterday">Yesterday</button>
+          <button type="button" data-preset="week">Last 7 days</button>
+          <button type="button" data-preset="month">This month</button>
+          <button type="button" data-preset="lastMonth">Last month</button>
+        </div>
+        <div class="range-inputs">
+          <label>From <input id="reportFrom" type="date" /></label>
+          <label>To <input id="reportTo" type="date" /></label>
+          <button class="secondary" id="exportCsvBtn" type="button">⬇️ Export CSV</button>
+        </div>
       </div>
+
+      <div id="reportNotice" class="notice" hidden></div>
 
       <div class="report-cards">
-        <div class="report-card"><span>Cash</span><strong id="reportCash">MVR 0.00</strong></div>
-        <div class="report-card"><span>Card</span><strong id="reportCard">MVR 0.00</strong></div>
-        <div class="report-card"><span>Transfer</span><strong id="reportTransfer">MVR 0.00</strong></div>
-        <div class="report-card highlight"><span>Total Sales</span><strong id="reportTotal">MVR 0.00</strong></div>
-        <div class="report-card"><span>Transactions</span><strong id="reportTransactions">0</strong></div>
-        <div class="report-card"><span>Items Sold</span><strong id="reportItems">0</strong></div>
+        <div class="report-card highlight"><span>Total sales</span><strong id="reportTotal">MVR 0.00</strong></div>
+        <div class="report-card profit"><span>Profit</span><strong id="reportProfit">MVR 0.00</strong><small id="reportMargin"></small></div>
+        <div class="report-card"><span>Buying cost</span><strong id="reportCost">MVR 0.00</strong></div>
+        <div class="report-card"><span>Transactions</span><strong id="reportTransactions">0</strong><small id="reportVoided"></small></div>
+        <div class="report-card"><span>Items sold</span><strong id="reportItems">0</strong></div>
+        <div class="report-card"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
       </div>
 
-      <div class="item-list-heading">Products Sold</div>
-      <div class="report-table-wrap">
-        <table class="report-table">
-          <thead><tr><th>Product</th><th>Qty Sold</th><th>Sales</th></tr></thead>
-          <tbody id="productSalesBody"></tbody>
-        </table>
+      <div class="report-grid">
+        <section class="report-section">
+          <div class="section-head">
+            <h3>🏆 Best sellers</h3>
+            <div class="segmented small" id="bestBy" role="group" aria-label="Rank best sellers by">
+              <button type="button" data-by="qty" class="active">Quantity</button>
+              <button type="button" data-by="sales">Sales</button>
+              <button type="button" data-by="profit">Profit</button>
+            </div>
+          </div>
+          <div id="bestSellers" class="bar-list"></div>
+        </section>
+
+        <section class="report-section">
+          <div class="section-head"><h3>💳 Payment methods</h3></div>
+          <div id="paymentBreakdown" class="bar-list"></div>
+        </section>
       </div>
+
+      <section class="report-section">
+        <div class="section-head">
+          <h3 id="timeChartTitle">⏰ Sales by hour</h3>
+          <span class="muted" id="timeChartNote"></span>
+        </div>
+        <div id="timeChart" class="column-chart" role="img"></div>
+      </section>
+
+      <section class="report-section">
+        <div class="section-head"><h3>📦 All products</h3><span class="muted">Tap a column to sort</span></div>
+        <div class="report-table-wrap">
+          <table class="report-table" id="productTable">
+            <thead><tr>
+              <th data-sort="name">Product</th>
+              <th data-sort="qty">Qty</th>
+              <th data-sort="sales">Sales</th>
+              <th data-sort="cost">Cost</th>
+              <th data-sort="profit">Profit</th>
+            </tr></thead>
+            <tbody id="productSalesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="report-section">
+        <div class="section-head"><h3>🧾 Transactions</h3><span class="muted">Void a sale entered by mistake — it stays on record</span></div>
+        <div id="transactionList" class="transaction-list"></div>
+      </section>
     </div>
   </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <div id="tooltip" class="chart-tooltip" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
 <script src="pos-core.js"></script>
 <script src="supabase-api.js"></script>
 <script src="app.js"></script>

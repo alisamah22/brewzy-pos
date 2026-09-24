@@ -1,20 +1,17 @@
 -- Brewzy POS — tables + open (anon) RLS policies.
 -- Run this once in the Supabase dashboard: SQL Editor -> New query -> Run.
 --
--- Troubleshooting: if you get "column ... does not exist" (e.g. sale_date),
--- a `sales` or `products` table already exists from earlier experimentation.
--- `create table if not exists` skips it, keeping the old (wrong) columns.
--- If those tables hold no data you need, reset them first, then re-run this
--- script from the top:
---   drop table if exists public.sales cascade;
---   drop table if exists public.products cascade;
+-- Already have the tables from an earlier version? Don't re-run this file —
+-- run supabase/migrations/2026-09-24-buying-price-and-keep-sales.sql instead.
+-- It adds the new columns without touching your data.
 
 -- Products (the shared menu)
 create table if not exists public.products (
   id         uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   name       text not null,
-  price      numeric not null,
+  price      numeric not null,            -- selling price
+  cost       numeric not null default 0,  -- buying price
   category   text not null,
   emoji      text
 );
@@ -25,7 +22,8 @@ create policy "anon insert products" on public.products for insert to anon with 
 create policy "anon update products" on public.products for update to anon using (true) with check (true);
 create policy "anon delete products" on public.products for delete to anon using (true);
 
--- Sales
+-- Sales. Rows are permanent: the app can add sales and mark them void, but
+-- cannot edit or delete them.
 create table if not exists public.sales (
   id             uuid primary key default gen_random_uuid(),
   created_at     timestamptz not null default now(),
@@ -34,13 +32,19 @@ create table if not exists public.sales (
   subtotal       numeric not null,
   tax            numeric not null,
   total          numeric not null,
-  items          jsonb not null
+  items          jsonb not null,
+  voided         boolean not null default false,
+  voided_at      timestamptz
 );
 
 alter table public.sales enable row level security;
 create policy "anon read sales"   on public.sales for select to anon using (true);
 create policy "anon insert sales" on public.sales for insert to anon with check (true);
-create policy "anon delete sales" on public.sales for delete to anon using (true);
+create policy "anon void sales"   on public.sales for update to anon using (true) with check (true);
+
+-- Only the void columns may be updated; nothing may be deleted.
+revoke update, delete, truncate on public.sales from anon, authenticated;
+grant update (voided, voided_at) on public.sales to anon;
 
 create index if not exists sales_sale_date_idx on public.sales (sale_date);
 
