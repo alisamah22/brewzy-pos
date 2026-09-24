@@ -60,6 +60,8 @@ Use a small local server (needed so the browser can load Supabase):
 2. Repo **Settings → Pages → Build and deployment**: Source = *Deploy from a
    branch*, Branch = your default branch, Folder = `/ (root)`.
 3. Wait for the Pages build; open the published URL.
+4. When you change `app.js`, `pos-core.js`, `supabase-api.js` or `styles.css`, bump the
+   `?v=` number on their tags in `index.html` so browsers don't mix old and new files.
 
 ## Tests
 Pure logic in `pos-core.js` has unit tests (Node 18+):
