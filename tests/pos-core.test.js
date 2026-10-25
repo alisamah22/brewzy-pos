@@ -260,10 +260,10 @@ test("discounted cart lines keep their regular price, and reports total the disc
   assert.ok(csv.split("\r\n")[1].endsWith(",,40.00,20.00"));
 });
 
-test("stockSummary values stock at the discount price while one is set", () => {
+test("stockSummary values stock at the regular price (discounts are chosen per sale)", () => {
   const s = stockSummary([{ name: "Brownie", price: 40, sale_price: 30, cost: 20, stock_qty: 2 }]);
-  assert.equal(s.sellValue, 60);
-  assert.equal(s.rows[0].difference, 10);
+  assert.equal(s.sellValue, 80);
+  assert.equal(s.rows[0].difference, 20);
 });
 
 test("tracksStock is off for the Expo category only", () => {
@@ -335,4 +335,20 @@ test("testModeUntil gives the Expo opening time only before 16:00 on 25 Oct 2026
   if (before.getDate() === 25) assert.equal(testModeUntil(before).getTime(), opening);
   assert.equal(testModeUntil(after), null);
   assert.equal(testModeUntil(new Date(2026, 9, 26, 9, 0)), null);
+});
+
+test("aggregateSales gives each product its discount price and quantity sold at discount", () => {
+  const r = aggregateSales([
+    { payment_method: "Cash", total: 70, items: [
+      { name: "Brownie", price: 40, qty: 1 },
+      { name: "Brownie", price: 30, regular_price: 40, qty: 1 },
+    ] },
+    { payment_method: "Card", total: 60, items: [{ name: "Brownie", price: 30, regular_price: 40, qty: 2 }] },
+  ]);
+  const row = r.productRows.find(p => p.name === "Brownie");
+  assert.equal(row.qty, 4);
+  assert.equal(row.sales, 130);
+  assert.equal(row.discountQty, 3);
+  assert.equal(row.discountSales, 90);
+  assert.deepEqual(row.discountPrices, [30]);
 });

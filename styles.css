@@ -692,7 +692,6 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
   background: var(--sale); color: white; font-weight: 900; font-size: 13px;
 }
 .product-card.on-sale .product-emoji { margin-top: 18px; }
-.product-card.on-sale .product-price { color: var(--sale); }
 .was-price { color: var(--muted); font-weight: 600; font-size: .85em; margin-right: 6px; }
 .sale-tag { color: var(--sale); font-weight: 800; white-space: nowrap; }
 
@@ -734,8 +733,10 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .report-modal.expo .report-card.highlight { background: var(--expo-soft); border-color: rgba(91,60,196,.35); }
 
 /* Expo items carry no stock price, so per-item cost and profit columns are hidden. */
-.report-modal.expo #productTable th:nth-child(n+4),
-.report-modal.expo #productTable td:nth-child(n+4),
+.report-modal.expo #productTable th:nth-child(4),
+.report-modal.expo #productTable td:nth-child(4),
+.report-modal.expo #productTable th:nth-child(5),
+.report-modal.expo #productTable td:nth-child(5),
 .report-modal.expo #bestBy [data-by="profit"] { display: none; }
 
 .bill-form {
@@ -776,3 +777,11 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .test-banner strong { margin-right: 6px; letter-spacing: .3px; }
 .test-banner span { white-space: nowrap; }
 @media (max-width: 620px) { .test-banner { padding: 9px 16px; } }
+
+/* Cart line: switch between the regular and the discount price */
+.price-toggle {
+  display: inline-block; margin-top: 6px; padding: 5px 11px; min-height: 32px;
+  border: 1px solid var(--sale); border-radius: 999px; background: white;
+  color: var(--sale); font-weight: 800; font-size: 13px;
+}
+.price-toggle.on { background: var(--sale-soft); color: var(--muted); border-color: var(--line); }

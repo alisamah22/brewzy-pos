@@ -210,10 +210,24 @@ function normaliseProduct(p) {
   };
 }
 
-// A cart line charges the item's current price (the discount price while one
-// is set) and remembers the regular price for the receipt and reports.
-function cartLine(product, qty) {
-  return { ...product, regular_price: product.price, price: sellingPrice(product), qty };
+// A cart line charges the regular price until the cashier taps "Discount" on
+// it; a discounted line charges the discount price and remembers the regular
+// price for the receipt and reports. "line" tells the two apart in the cart.
+function cartLine(product, qty, discounted = false) {
+  const d = discounted && hasDiscount(product);
+  return {
+    ...product, line: `${product.id}${d ? ":d" : ""}`, discounted: d,
+    regular_price: product.price, price: d ? sellingPrice(product) : product.price, qty,
+  };
+}
+
+// Add qty to the cart line for this product and price, merging with an
+// existing line at the same price.
+function putInCart(product, qty, discounted) {
+  const line = cartLine(product, qty, discounted);
+  const existing = cart.find(i => i.line === line.line);
+  if (existing) existing.qty += qty;
+  else cart.push(line);
 }
 
 // Load the shared menu from Supabase; fall back to the cached copy if offline.
@@ -232,12 +246,12 @@ async function loadProducts() {
   }
   menuLoaded = true;
   // Keep cart lines in step with any menu edits; drop deleted items.
-  cart = cart
-    .map(item => {
-      const p = products.find(x => x.id === item.id);
-      return p ? cartLine(p, item.qty) : null;
-    })
-    .filter(Boolean);
+  const lines = cart;
+  cart = [];
+  for (const item of lines) {
+    const p = products.find(x => x.id === item.id);
+    if (p) putInCart(p, item.qty, item.discounted);
+  }
   renderAll();
 }
 
@@ -255,7 +269,8 @@ function renderCategories() {
 
 function renderProducts() {
   const query = $("searchInput").value.trim().toLowerCase();
-  const inCart = new Map(cart.map(i => [i.id, i.qty]));
+  const inCart = new Map();
+  cart.forEach(i => inCart.set(i.id, (inCart.get(i.id) || 0) + i.qty));
   const filtered = products.filter(product => {
     const matchesCategory = activeCategory === "All" || product.category === activeCategory;
     const matchesSearch = !query || product.name.toLowerCase().includes(query) ||
@@ -277,18 +292,15 @@ function renderProducts() {
   $("productGrid").innerHTML = empty || filtered.map(product => {
     const qty = inCart.get(product.id);
     const onSale = hasDiscount(product);
-    const now = sellingPrice(product);
-    const off = onSale ? discountPercent(product.price, now) : 0;
-    const priceText = onSale ? `${money(now)}, ${off}% off, was ${money(product.price)}` : money(now);
     return `
     <button class="product-card ${qty ? "in-cart" : ""} ${onSale ? "on-sale" : ""}" data-id="${escapeHtml(product.id)}"
-      aria-label="Add ${escapeHtml(product.name)}, ${priceText}${qty ? `, ${qty} in order` : ""}">
-      ${onSale ? `<span class="sale-badge">−${off}%</span>` : ""}
+      aria-label="Add ${escapeHtml(product.name)}, ${money(product.price)}${onSale ? ", discount available" : ""}${qty ? `, ${qty} in order` : ""}">
+      ${onSale ? `<span class="sale-badge">🏷️ Discount</span>` : ""}
       ${qty ? `<span class="qty-badge">${qty}</span>` : ""}
       <div class="product-emoji">${escapeHtml(product.emoji || "🍽️")}</div>
       <span class="product-name">${escapeHtml(product.name)}</span>
       <span class="product-category">${escapeHtml(product.category)}</span>
-      <span class="product-price">${onSale ? `<s class="was-price">${money(product.price)}</s>` : ""}${money(now)}</span>
+      <span class="product-price">${money(product.price)}</span>
     </button>`;
   }).join("");
 }
@@ -296,26 +308,32 @@ function renderProducts() {
 // ---------- Cart ----------
 
 function addToCart(id) {
-  const existing = cart.find(item => item.id === id);
-  if (existing) existing.qty += 1;
-  else {
-    const product = products.find(p => p.id === id);
-    if (!product) return;
-    cart.push(cartLine(product, 1));
-  }
+  const product = products.find(p => p.id === id);
+  if (!product) return;
+  putInCart(product, 1, false); // regular price until "Discount" is tapped
   renderCart();
   renderProducts();
   const card = document.querySelector(`.product-card[data-id="${CSS.escape(id)}"]`);
   if (card) card.classList.add("bump");
 }
 
-function updateQty(id, change) {
-  const item = cart.find(i => i.id === id);
+function updateQty(line, change) {
+  const item = cart.find(i => i.line === line);
   if (!item) return;
   item.qty += change;
-  if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
+  if (item.qty <= 0) cart = cart.filter(i => i !== item);
   renderCart();
   renderProducts();
+}
+
+// Switch a whole cart line between the regular and the discount price.
+function toggleLineDiscount(line) {
+  const item = cart.find(i => i.line === line);
+  const product = item && products.find(p => p.id === item.id);
+  if (!product) return;
+  cart = cart.filter(i => i !== item);
+  putInCart(product, item.qty, !item.discounted);
+  renderCart();
 }
 
 function clearCart() {
@@ -336,14 +354,16 @@ function renderCart() {
       <div class="cart-emoji" aria-hidden="true">${escapeHtml(item.emoji || "🍽️")}</div>
       <div class="cart-info">
         <h4>${escapeHtml(item.name)}</h4>
-        <small>${money(item.price)} each${item.regular_price > item.price
+        <small>${money(item.price)} each${item.discounted
           ? ` <s class="was-price">${money(item.regular_price)}</s> <span class="sale-tag">🏷️ ${discountPercent(item.regular_price, item.price)}% off</span>` : ""}</small>
+        ${hasDiscount({ ...item, price: item.regular_price }) ? `<button type="button" class="price-toggle ${item.discounted ? "on" : ""}" data-line="${escapeHtml(item.line)}"
+          aria-pressed="${item.discounted}">${item.discounted ? "↩ Regular price" : "🏷️ Discount"}</button>` : ""}
       </div>
       <div class="qty-controls">
-        <button class="qty-btn ${item.qty === 1 ? "remove" : ""}" data-id="${escapeHtml(item.id)}" data-change="-1"
+        <button class="qty-btn ${item.qty === 1 ? "remove" : ""}" data-line="${escapeHtml(item.line)}" data-change="-1"
           aria-label="${item.qty === 1 ? "Remove" : "One less"} ${escapeHtml(item.name)}">${item.qty === 1 ? "🗑" : "−"}</button>
         <span class="qty">${item.qty}</span>
-        <button class="qty-btn" data-id="${escapeHtml(item.id)}" data-change="1" aria-label="One more ${escapeHtml(item.name)}">＋</button>
+        <button class="qty-btn" data-line="${escapeHtml(item.line)}" data-change="1" aria-label="One more ${escapeHtml(item.name)}">＋</button>
       </div>
       <strong class="line-total">${money(item.price * item.qty)}</strong>
     </div>
@@ -848,7 +868,7 @@ function updateDiscardPreview() {
   // An edited entry keeps the prices saved with it.
   const entry = discardState.entries.find(d => d.id === $("discardEditingId").value);
   const cost = entry ? Number(entry.cost || 0) : product.cost;
-  const price = entry ? Number(entry.price || 0) : sellingPrice(product);
+  const price = entry ? Number(entry.price || 0) : product.price;
   el.textContent = cost > 0
     ? `Loss ${money(cost * qty)} at stock price (would have sold for ${money(price * qty)})`
     : `No stock price set for this item, so the loss will show as ${money(0)}.`;
@@ -900,7 +920,7 @@ async function saveDiscard() {
         product_name: product.name,
         qty: Number(fields.qty),
         cost: product.cost,
-        price: sellingPrice(product),
+        price: product.price,
         discard_date: fields.date,
       });
     }
@@ -1290,10 +1310,19 @@ function renderTimeChart(r, from, to) {
     </div>` : `<div class="empty-state small"><span>No sales in this period.</span></div>`;
 }
 
+// The discount price(s) an item sold at; otherwise its current discount
+// price on the menu, or a dash when it has none.
+function discountPriceCell(row) {
+  if (row.discountPrices.length) return row.discountPrices.map(money).join(" / ");
+  const p = productFor(row.name);
+  return p && hasDiscount(p) ? `<span class="muted">${money(p.sale_price)}</span>` : `<span class="muted">—</span>`;
+}
+
 function renderProductTable(r) {
   const { sortKey, sortDir } = report;
   const rows = [...r.productRows].sort((a, b) => {
-    const cmp = sortKey === "name" ? a.name.localeCompare(b.name) : a[sortKey] - b[sortKey];
+    const val = row => (sortKey === "discountPrice" ? row.discountPrices[0] || 0 : row[sortKey]);
+    const cmp = sortKey === "name" ? a.name.localeCompare(b.name) : val(a) - val(b);
     return cmp * sortDir || a.name.localeCompare(b.name);
   });
   document.querySelectorAll("#productTable th").forEach(th => {
@@ -1309,8 +1338,10 @@ function renderProductTable(r) {
       <td>${money(item.sales)}</td>
       <td>${money(item.cost)}</td>
       <td class="${item.profit < 0 ? "loss-text" : ""}">${item.profit < 0 ? "−" : ""}${money(Math.abs(item.profit))}</td>
+      <td>${discountPriceCell(item)}</td>
+      <td>${item.discountQty ? `<strong class="sale-tag">${item.discountQty}</strong>` : `<span class="muted">0</span>`}</td>
     </tr>
-  `).join("") : `<tr><td colspan="5" class="report-empty">No sales recorded for this period.</td></tr>`;
+  `).join("") : `<tr><td colspan="7" class="report-empty">No sales recorded for this period.</td></tr>`;
 }
 
 // ---------- Expo prep bills ----------
@@ -1577,7 +1608,9 @@ $("productGrid").addEventListener("click", e => {
 
 $("cartItems").addEventListener("click", e => {
   const btn = e.target.closest(".qty-btn");
-  if (btn) updateQty(btn.dataset.id, Number(btn.dataset.change));
+  if (btn) return updateQty(btn.dataset.line, Number(btn.dataset.change));
+  const toggle = e.target.closest(".price-toggle");
+  if (toggle) toggleLineDiscount(toggle.dataset.line);
 });
 
 $("clearCartBtn").addEventListener("click", () => {

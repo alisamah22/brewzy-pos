@@ -238,8 +238,14 @@
         }
 
         const current = products.get(item.name) ||
-          { name: item.name, category: item.category || "", qty: 0, sales: 0, cost: 0, profit: 0 };
+          { name: item.name, category: item.category || "", qty: 0, sales: 0, cost: 0, profit: 0,
+            discountQty: 0, discountSales: 0, discountPrices: [] };
         current.qty += qty;
+        if (regular > price) {
+          current.discountQty += qty;
+          current.discountSales = round2(current.discountSales + price * qty);
+          if (!current.discountPrices.includes(price)) current.discountPrices.push(price);
+        }
         current.sales = round2(current.sales + price * qty);
         current.cost = round2(current.cost + cost * qty);
         current.profit = round2(current.sales - current.cost);
@@ -320,8 +326,7 @@
   }
 
   // Current stock per menu item, valued at stock (buying) price and selling
-  // price (the discount price while one is set). "difference" is selling
-  // minus stock price, per unit and in total.
+  // price. "difference" is selling minus stock price, per unit and in total.
   function stockSummary(products) {
     let totalQty = 0;
     let costValue = 0;
@@ -329,7 +334,7 @@
     const rows = products.map((p) => {
       const qty = Number(p.stock_qty || 0);
       const cost = Number(p.cost || 0);
-      const price = sellingPrice(p);
+      const price = Number(p.price || 0);
       totalQty += qty;
       costValue += cost * qty;
       sellValue += price * qty;

@@ -9,11 +9,13 @@ daily reports are shared across devices.
 - Touch-friendly menu with search, category filters, and an "in order" badge on each item
 - Shared menu stored in Supabase: add / edit / delete items from any till, each with a
   **stock (buying) price**, **selling price** and **stock quantity** (the form shows the profit per item as you type)
-- **Discounts:** put any item on sale from Manage Items (**🏷️ Discount** on the item, or **Edit**).
+- **Discounts:** give any item a discount price from Manage Items (**🏷️ Discount** on the item, or **Edit**).
   Tap 10% / 15% / 20% / 25% / 30% / 50% off or type the discounted price; the form shows the old and new
-  price, what the customer saves and your profit at the new price. The till shows a sale badge and the
-  crossed-out regular price, the receipt shows "You saved", and the report shows the total discount given.
-  Clear the price (**Remove discount**) and save to end the sale
+  price, what the customer saves and your profit at the new price. On the till the item has a 🏷️ tag and rings
+  up at the **regular price**; tap **🏷️ Discount** on its line in the order to charge the discount price
+  (tap **Regular price** to switch back; tapping the item again adds a new regular-price line, so one order can
+  mix both). The receipt shows "You saved", and the report shows the total discount given plus each item's
+  **discount price** and **quantity sold at discount**. Clear the price (**Remove discount**) and save to end it
 - **Discarded stock:** record how many of an item were thrown away and on which date; each record
   can be edited or deleted later (Manage Items → **Discard**, or **Edit** on an item)
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
