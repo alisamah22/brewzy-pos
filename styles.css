@@ -16,6 +16,10 @@
   --warn: #9a5b00;
   --warn-soft: #fff4dc;
   --info-soft: #eaf2fb;
+  --sale: #c2185b;
+  --sale-soft: #fdebf2;
+  --expo: #5b3cc4;
+  --expo-soft: #efeafd;
   --shadow: 0 10px 30px rgba(31, 42, 55, 0.08);
   --topbar-h: 76px;
 }
@@ -679,4 +683,86 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 }
 @media (max-width: 620px) {
   .report-cards.stock-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- Discounts ---------- */
+.sale-badge {
+  position: absolute; top: 10px; left: 10px;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--sale); color: white; font-weight: 900; font-size: 13px;
+}
+.product-card.on-sale .product-emoji { margin-top: 18px; }
+.product-card.on-sale .product-price { color: var(--sale); }
+.was-price { color: var(--muted); font-weight: 600; font-size: .85em; margin-right: 6px; }
+.sale-tag { color: var(--sale); font-weight: 800; white-space: nowrap; }
+
+.chip-tag.sale { background: var(--sale-soft); color: var(--sale); }
+.small-btn.sale { color: var(--sale); border-color: var(--sale); background: var(--sale-soft); }
+.manage-actions { flex-wrap: wrap; justify-content: flex-end; }
+
+.discount-box {
+  margin-top: 12px; padding: 12px; border-radius: 14px;
+  background: white; border: 1px dashed var(--line);
+}
+.discount-box.active { border: 1px solid var(--sale); background: var(--sale-soft); }
+.discount-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.discount-head .form-title { display: flex; align-items: center; gap: 8px; }
+.discount-help { margin: 4px 0 10px; color: var(--muted); font-size: 13px; }
+.discount-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.discount-picks .chip { min-height: 40px; }
+.discount-picks .chip.active { background: var(--sale); border-color: var(--sale); }
+.discount-input { display: block; margin-top: 10px; font-size: 12px; font-weight: 800; }
+.discount-input input { margin-top: 6px; font-weight: 500; }
+.discount-preview { margin-top: 10px; font-size: 14px; font-weight: 700; border-radius: 12px; }
+.discount-preview:empty { display: none; }
+.discount-preview.gain { padding: 10px 12px; background: white; color: var(--sale); }
+.discount-preview.loss { padding: 10px 12px; background: var(--danger-soft); color: var(--danger); }
+
+.r-discount { color: var(--muted); font-size: 12px; }
+.r-saved { color: var(--sale); font-size: 15px; }
+
+.no-stock-note { margin: 0; padding: 9px 12px; border-radius: 12px; background: var(--info-soft); font-size: 13px; font-weight: 700; color: var(--text); }
+
+/* ---------- Main / Expo report switch and prep bills ---------- */
+.scope-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.scope-switch button {
+  border: 2px solid var(--line); background: white; border-radius: 14px;
+  padding: 12px; font-weight: 800; font-size: 15px; color: var(--muted);
+}
+.scope-switch button.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-dark); }
+.scope-switch button[data-scope="expo"].active { border-color: var(--expo); background: var(--expo-soft); color: var(--expo); }
+.report-modal.expo .report-card.highlight { background: var(--expo-soft); border-color: rgba(91,60,196,.35); }
+
+/* Expo items carry no stock price, so per-item cost and profit columns are hidden. */
+.report-modal.expo #productTable th:nth-child(n+4),
+.report-modal.expo #productTable td:nth-child(n+4),
+.report-modal.expo #bestBy [data-by="profit"] { display: none; }
+
+.bill-form {
+  display: grid; grid-template-columns: 160px minmax(0, 1fr) 150px auto;
+  gap: 10px; align-items: end;
+  padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft);
+}
+.bill-form.editing { border-color: var(--expo); background: var(--expo-soft); }
+.bill-form label { font-size: 12px; font-weight: 800; }
+.bill-form input { margin-top: 4px; font-weight: 500; }
+.bill-actions { display: flex; gap: 8px; }
+.bill-list { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.bill-list .empty-state.small, .bill-list .notice { margin: 0; }
+.bill-total { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--panel-soft); font-weight: 800; border-bottom: 1px solid var(--line); }
+.bill-row {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto;
+  gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--line);
+}
+.bill-row:last-child { border-bottom: 0; }
+.bill-row.editing { background: var(--expo-soft); }
+.bill-row .bill-date { color: var(--muted); font-size: 13px; }
+.bill-row .bill-what { overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .bill-form { grid-template-columns: 1fr 1fr; }
+  .bill-form .bill-desc, .bill-actions { grid-column: 1 / -1; }
+  .bill-actions { justify-content: flex-end; }
+  .bill-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .bill-row .bill-date { grid-column: 1 / -1; }
 }

@@ -5,10 +5,13 @@ const {
   money, localDateKey, parseDateKey, addDays, dateRange, calcTotals, cartToItems, margin,
   quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
   discardError, stockSummary, aggregateDiscards,
+  hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
+  scopeSales, expenseError, sumExpenses,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
 const PENDING_SALES_KEY = "brewzyPendingSales";
+const REPORT_SCOPE_KEY = "brewzyReportScope";
 const EMOJI_PICKS = ["🍔", "🌭", "🥪", "🍕", "🍟", "🥐", "🍩", "🍪", "🍫", "🍰", "🧁", "🍨",
   "☕", "🧋", "🥤", "🧃", "🍵", "🥗", "🍛", "🐟"];
 
@@ -43,7 +46,11 @@ let saving = false;
 
 const report = {
   preset: "today",
-  sales: [],
+  scope: readStore(REPORT_SCOPE_KEY, "main") === "expo" ? "expo" : "main",
+  allSales: [], // every sale in the range
+  sales: [], // the Main or Expo part of each sale (see applyScope)
+  bills: [],
+  billsFailed: false,
   discards: [],
   discardsFailed: false,
   stockSortKey: "loss",
@@ -86,7 +93,7 @@ function isNetworkError(err) {
 
 function describeError(err) {
   const msg = String((err && (err.message || err.details)) || "");
-  if ((/column/i.test(msg) && /cost|voided|stock_qty/i.test(msg)) || /discards/i.test(msg)) {
+  if ((/column/i.test(msg) && /cost|voided|stock_qty|sale_price/i.test(msg)) || /discards|expenses/i.test(msg)) {
     return "The database needs a one-time update: run the migration SQL from the README.";
   }
   if (/permission denied|row-level security/i.test(msg)) {
@@ -194,11 +201,19 @@ async function checkConnection() {
 // ---------- Menu ----------
 
 function normaliseProduct(p) {
-  // stock_qty stays undefined on a database without the stock migration.
+  // stock_qty / sale_price stay undefined on a database without their
+  // migration; sale_price is null when the item has no discount.
   return {
     ...p, price: Number(p.price), cost: Number(p.cost || 0),
     stock_qty: p.stock_qty === undefined || p.stock_qty === null ? undefined : Number(p.stock_qty),
+    sale_price: p.sale_price === undefined ? undefined : p.sale_price === null ? null : Number(p.sale_price),
   };
+}
+
+// A cart line charges the item's current price (the discount price while one
+// is set) and remembers the regular price for the receipt and reports.
+function cartLine(product, qty) {
+  return { ...product, regular_price: product.price, price: sellingPrice(product), qty };
 }
 
 // Load the shared menu from Supabase; fall back to the cached copy if offline.
@@ -220,7 +235,7 @@ async function loadProducts() {
   cart = cart
     .map(item => {
       const p = products.find(x => x.id === item.id);
-      return p ? { ...p, qty: item.qty } : null;
+      return p ? cartLine(p, item.qty) : null;
     })
     .filter(Boolean);
   renderAll();
@@ -261,14 +276,19 @@ function renderProducts() {
 
   $("productGrid").innerHTML = empty || filtered.map(product => {
     const qty = inCart.get(product.id);
+    const onSale = hasDiscount(product);
+    const now = sellingPrice(product);
+    const off = onSale ? discountPercent(product.price, now) : 0;
+    const priceText = onSale ? `${money(now)}, ${off}% off, was ${money(product.price)}` : money(now);
     return `
-    <button class="product-card ${qty ? "in-cart" : ""}" data-id="${escapeHtml(product.id)}"
-      aria-label="Add ${escapeHtml(product.name)}, ${money(product.price)}${qty ? `, ${qty} in order` : ""}">
+    <button class="product-card ${qty ? "in-cart" : ""} ${onSale ? "on-sale" : ""}" data-id="${escapeHtml(product.id)}"
+      aria-label="Add ${escapeHtml(product.name)}, ${priceText}${qty ? `, ${qty} in order` : ""}">
+      ${onSale ? `<span class="sale-badge">−${off}%</span>` : ""}
       ${qty ? `<span class="qty-badge">${qty}</span>` : ""}
       <div class="product-emoji">${escapeHtml(product.emoji || "🍽️")}</div>
       <span class="product-name">${escapeHtml(product.name)}</span>
       <span class="product-category">${escapeHtml(product.category)}</span>
-      <span class="product-price">${money(product.price)}</span>
+      <span class="product-price">${onSale ? `<s class="was-price">${money(product.price)}</s>` : ""}${money(now)}</span>
     </button>`;
   }).join("");
 }
@@ -281,7 +301,7 @@ function addToCart(id) {
   else {
     const product = products.find(p => p.id === id);
     if (!product) return;
-    cart.push({ ...product, qty: 1 });
+    cart.push(cartLine(product, 1));
   }
   renderCart();
   renderProducts();
@@ -316,7 +336,8 @@ function renderCart() {
       <div class="cart-emoji" aria-hidden="true">${escapeHtml(item.emoji || "🍽️")}</div>
       <div class="cart-info">
         <h4>${escapeHtml(item.name)}</h4>
-        <small>${money(item.price)} each</small>
+        <small>${money(item.price)} each${item.regular_price > item.price
+          ? ` <s class="was-price">${money(item.regular_price)}</s> <span class="sale-tag">🏷️ ${discountPercent(item.regular_price, item.price)}% off</span>` : ""}</small>
       </div>
       <div class="qty-controls">
         <button class="qty-btn ${item.qty === 1 ? "remove" : ""}" data-id="${escapeHtml(item.id)}" data-change="-1"
@@ -466,8 +487,11 @@ function showReceipt(sale, received, uploaded) {
     day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
   const lines = sale.items.map(item => `
-    <div class="r-line"><span>${item.qty} × ${escapeHtml(item.name)}</span><span>${money(item.price * item.qty)}</span></div>
+    <div class="r-line"><span>${item.qty} × ${escapeHtml(item.name)}${item.regular_price > item.price
+      ? ` <small class="r-discount">(${discountPercent(item.regular_price, item.price)}% off ${money(item.regular_price)})</small>` : ""}</span><span>${money(item.price * item.qty)}</span></div>
   `).join("");
+  const saved = PosCore.round2(sale.items.reduce((sum, item) =>
+    sum + (item.regular_price > item.price ? (item.regular_price - item.price) * item.qty : 0), 0));
   const cash = sale.payment_method === "Cash" ? `
     <div class="r-line"><span>Cash received</span><span>${money(received)}</span></div>
     <div class="r-line r-change"><span>Change</span><strong>${money(received - sale.total)}</strong></div>` : "";
@@ -476,6 +500,7 @@ function showReceipt(sale, received, uploaded) {
     <div class="r-head"><strong>Brewzy</strong><span>${escapeHtml(time)}</span></div>
     ${lines}
     <div class="r-line r-total"><span>Total</span><strong>${money(sale.total)}</strong></div>
+    ${saved > 0 ? `<div class="r-line r-saved"><span>🏷️ You saved</span><strong>${money(saved)}</strong></div>` : ""}
     <div class="r-line"><span>Paid by</span><span>${escapeHtml(sale.payment_method)}</span></div>
     ${cash}
     ${uploaded ? "" : `<div class="notice warn">⏳ No internet. The sale is saved on this device and will upload automatically when the connection is back.</div>`}
@@ -509,19 +534,26 @@ function renderManageList() {
     const profitChip = product.cost > 0
       ? `<span class="chip-tag ${m.profit < 0 ? "loss" : "gain"}">${m.profit < 0 ? "▼" : "▲"} ${money(m.profit)} · ${m.percent.toFixed(0)}%</span>`
       : `<span class="chip-tag muted">No stock price</span>`;
-    const stockChip = product.stock_qty === undefined ? ""
+    const tracked = tracksStock(product);
+    const stockChip = product.stock_qty === undefined || !tracked ? ""
       : `<span class="chip-tag ${product.stock_qty > 0 ? "" : "warn"}">Qty ${product.stock_qty}</span>`;
+    const onSale = hasDiscount(product);
+    const saleChip = onSale
+      ? `<span class="chip-tag sale">🏷️ ${discountPercent(product.price, product.sale_price)}% off · now ${money(product.sale_price)}</span>` : "";
     return `
     <div class="manage-row ${product.id === editingId ? "editing" : ""}">
       <div class="manage-emoji" aria-hidden="true">${escapeHtml(product.emoji || "🍽️")}</div>
       <div class="manage-info">
         <strong>${escapeHtml(product.name)}</strong>
-        <small>${escapeHtml(product.category)} · Stock ${money(product.cost)} · Sell ${money(product.price)}</small>
-        ${profitChip} ${stockChip}
+        <small>${escapeHtml(product.category)} · Stock ${money(product.cost)} · Sell ${onSale
+          ? `<s>${money(product.price)}</s> ${money(product.sale_price)}` : money(product.price)}</small>
+        ${saleChip} ${profitChip} ${stockChip}
       </div>
       <div class="manage-actions">
         <button type="button" class="small-btn" data-edit="${escapeHtml(product.id)}">Edit</button>
-        <button type="button" class="small-btn" data-discard="${escapeHtml(product.id)}" aria-label="Record discarded ${escapeHtml(product.name)}">Discard</button>
+        <button type="button" class="small-btn ${onSale ? "sale" : ""}" data-discount="${escapeHtml(product.id)}"
+          aria-label="${onSale ? "Change the discount on" : "Add a discount to"} ${escapeHtml(product.name)}">🏷️ ${onSale ? "On sale" : "Discount"}</button>
+        ${tracked ? `<button type="button" class="small-btn" data-discard="${escapeHtml(product.id)}" aria-label="Record discarded ${escapeHtml(product.name)}">Discard</button>` : ""}
         <button type="button" class="small-btn delete" data-delete="${escapeHtml(product.id)}" aria-label="Delete ${escapeHtml(product.name)}">🗑</button>
       </div>
     </div>`;
@@ -557,6 +589,81 @@ function updateMarginPreview() {
   }
 }
 
+// ---------- Discount (in the Manage Items form) ----------
+
+function updateDiscountPreview() {
+  const priceRaw = $("itemPrice").value;
+  const saleRaw = $("itemSalePrice").value.trim();
+  const costRaw = $("itemCost").value;
+  const price = Number(priceRaw);
+  const sale = Number(saleRaw);
+  const el = $("discountPreview");
+  el.className = "discount-preview";
+  $("removeDiscountBtn").hidden = saleRaw === "";
+  $("discountBox").classList.toggle("active", saleRaw !== "");
+
+  let on = false;
+  if (saleRaw === "") {
+    el.textContent = "";
+  } else if (priceRaw === "" || !(price > 0)) {
+    el.classList.add("loss");
+    el.textContent = "Enter the selling price first.";
+  } else if (!Number.isFinite(sale) || sale < 0) {
+    el.classList.add("loss");
+    el.textContent = "Please enter a valid discount price.";
+  } else if (sale >= price) {
+    el.classList.add("loss");
+    el.textContent = `⚠️ The discount price must be lower than the selling price (${money(price)}).`;
+  } else {
+    on = true;
+    const m = margin(sale, costRaw);
+    const belowCost = costRaw !== "" && m.profit < 0;
+    let profit = "";
+    if (costRaw !== "") {
+      profit = belowCost
+        ? ` ⚠️ Below stock price: a loss of ${money(-m.profit)} on each one.`
+        : ` Profit per item: ${money(m.profit)}.`;
+    }
+    el.classList.add(belowCost ? "loss" : "gain");
+    el.textContent = `Was ${money(price)} → now ${money(sale)} (${discountPercent(price, sale)}% off). ` +
+      `Customer saves ${money(price - sale)} on each one.${profit}`;
+  }
+  const state = $("discountState");
+  state.textContent = on ? `${discountPercent(price, sale)}% off` : "Off";
+  state.className = `chip-tag ${on ? "sale" : "muted"}`;
+
+  document.querySelectorAll("#discountPicks .chip").forEach(chip => {
+    chip.classList.toggle("active", on && priceAfterPercentOff(price, chip.dataset.percent) === PosCore.round2(sale));
+  });
+}
+
+function pickDiscount(percent) {
+  const price = Number($("itemPrice").value);
+  if ($("itemPrice").value === "" || !(price > 0)) {
+    toast("Enter the selling price first.", "error");
+    $("itemPrice").focus();
+    return;
+  }
+  $("itemSalePrice").value = priceAfterPercentOff(price, percent);
+  updateDiscountPreview();
+}
+
+function removeDiscount() {
+  $("itemSalePrice").value = "";
+  updateDiscountPreview();
+  if ($("editingId").value) toast("Discount removed. Tap Save Changes to keep this.", "info");
+}
+
+// Stock quantity and discards only apply to items outside the Expo tab.
+function updateStockFields() {
+  const tracked = tracksStock({ category: $("itemCategory").value });
+  $("itemStockField").hidden = !tracked;
+  $("noStockNote").hidden = tracked;
+  const product = products.find(p => p.id === $("editingId").value);
+  if (product && tracked) openDiscardPanel(product);
+  else closeDiscardPanel();
+}
+
 function loadItemForEdit(id) {
   const product = products.find(p => p.id === id);
   if (!product) return;
@@ -565,6 +672,7 @@ function loadItemForEdit(id) {
   $("itemPrice").value = product.price;
   $("itemCost").value = product.cost || "";
   $("itemStock").value = product.stock_qty === undefined ? "" : product.stock_qty;
+  $("itemSalePrice").value = hasDiscount(product) ? product.sale_price : "";
   $("itemCategory").value = product.category;
   $("itemEmoji").value = product.emoji || "";
   $("formTitle").textContent = `Editing: ${product.name}`;
@@ -572,20 +680,23 @@ function loadItemForEdit(id) {
   $("resetFormBtn").hidden = false;
   $("itemForm").classList.add("editing");
   updateMarginPreview();
+  updateDiscountPreview();
   renderManageList();
-  openDiscardPanel(product);
+  updateStockFields();
   $("itemForm").scrollIntoView({ block: "nearest", behavior: "smooth" });
   $("itemName").focus();
 }
 
 function resetItemForm(focus = true) {
-  ["editingId", "itemName", "itemPrice", "itemCost", "itemStock", "itemCategory", "itemEmoji"].forEach(id => { $(id).value = ""; });
+  ["editingId", "itemName", "itemPrice", "itemCost", "itemStock", "itemSalePrice", "itemCategory", "itemEmoji"]
+    .forEach(id => { $(id).value = ""; });
   $("formTitle").textContent = "Add a new item";
   $("saveItemBtn").textContent = "Add Item";
   $("resetFormBtn").hidden = true;
   $("itemForm").classList.remove("editing");
-  closeDiscardPanel();
+  updateStockFields();
   updateMarginPreview();
+  updateDiscountPreview();
   renderManageList();
   if (focus) $("itemName").focus();
 }
@@ -597,8 +708,10 @@ async function saveItem() {
     price: $("itemPrice").value,
     cost: $("itemCost").value,
     stock: $("itemStock").value.trim(),
+    salePrice: $("itemSalePrice").value.trim(),
   };
   const editingId = $("editingId").value;
+  if (!tracksStock(fields)) fields.stock = ""; // Expo items don't keep a stock quantity
 
   const error = productError(fields);
   if (error) {
@@ -614,6 +727,10 @@ async function saveItem() {
   };
   // Left out when blank so items still save before the stock migration is run.
   if (fields.stock !== "") row.stock_qty = Number(fields.stock);
+  // Same for the discount: only sent when one is set, or to clear one.
+  const existing = products.find(p => p.id === editingId);
+  if (fields.salePrice !== "") row.sale_price = Number(fields.salePrice);
+  else if (existing && existing.sale_price !== undefined && existing.sale_price !== null) row.sale_price = null;
 
   const saveBtn = $("saveItemBtn");
   saveBtn.disabled = true;
@@ -627,7 +744,10 @@ async function saveItem() {
     return;
   }
   saveBtn.disabled = false;
-  toast(`${editingId ? "Updated" : "Added"} “${row.name}” ✓`, "success");
+  let note = "";
+  if (typeof row.sale_price === "number") note = ` · now ${discountPercent(row.price, row.sale_price)}% off`;
+  else if (row.sale_price === null) note = " · discount removed";
+  toast(`${editingId ? "Updated" : "Added"} “${row.name}” ✓${note}`, "success");
   resetItemForm();
   await loadProducts(); // re-renders everything, including the manage list
 }
@@ -727,7 +847,7 @@ function updateDiscardPreview() {
   // An edited entry keeps the prices saved with it.
   const entry = discardState.entries.find(d => d.id === $("discardEditingId").value);
   const cost = entry ? Number(entry.cost || 0) : product.cost;
-  const price = entry ? Number(entry.price || 0) : product.price;
+  const price = entry ? Number(entry.price || 0) : sellingPrice(product);
   el.textContent = cost > 0
     ? `Loss ${money(cost * qty)} at stock price (would have sold for ${money(price * qty)})`
     : `No stock price set for this item, so the loss will show as ${money(0)}.`;
@@ -779,7 +899,7 @@ async function saveDiscard() {
         product_name: product.name,
         qty: Number(fields.qty),
         cost: product.cost,
-        price: product.price,
+        price: sellingPrice(product),
         discard_date: fields.date,
       });
     }
@@ -818,6 +938,8 @@ function formatDay(key, opts = { weekday: "short", day: "numeric", month: "short
 
 function openSalesReport() {
   report.showAllTransactions = false;
+  markScope();
+  resetBillForm();
   $("salesReportDialog").showModal();
   setPreset(report.preset === "custom" ? "today" : report.preset);
 }
@@ -829,6 +951,34 @@ function setPreset(preset) {
   $("reportTo").value = range.to;
   markPreset();
   loadReport();
+}
+
+// ---------- Main / Expo report switch ----------
+
+function setScope(scope) {
+  report.scope = scope;
+  writeStore(REPORT_SCOPE_KEY, scope);
+  report.showAllTransactions = false;
+  markScope();
+  applyScope();
+  renderReport();
+}
+
+function markScope() {
+  const expo = report.scope === "expo";
+  document.querySelectorAll("#reportScope [data-scope]").forEach(b => {
+    const active = b.dataset.scope === report.scope;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", String(active));
+  });
+  $("reportDialogBody").classList.toggle("expo", expo);
+  $("reportTitle").textContent = expo ? "🎪 Expo Report" : "Sales Report";
+  $("billsSection").hidden = !expo;
+  $("stockSection").hidden = expo;
+}
+
+function applyScope() {
+  report.sales = scopeSales(report.allSales, report.scope);
 }
 
 function markPreset() {
@@ -864,6 +1014,13 @@ async function loadReport() {
     discardsFailed = describeError(err);
     return [];
   });
+  // Bills load separately too, so the report works before their migration.
+  let billsFailed = false;
+  const billsRequest = PosApi.fetchExpensesInRange(from, to, "Expo").catch(err => {
+    console.error("Failed to load bills:", err);
+    billsFailed = describeError(err);
+    return [];
+  });
   try {
     sales = await PosApi.fetchSalesInRange(from, to);
     setOnline(true);
@@ -873,16 +1030,20 @@ async function loadReport() {
     if (isNetworkError(err)) setOnline(false);
   }
   discards = await discardsRequest;
+  const bills = await billsRequest;
   if (token !== report.token) return; // a newer request replaced this one
   report.discards = discards;
   report.discardsFailed = discardsFailed;
+  report.bills = bills;
+  report.billsFailed = billsFailed;
 
   // Include sales still waiting to upload from this till.
   const ids = new Set(sales.map(s => s.id));
   const waiting = pendingSales
     .filter(s => s.sale_date >= from && s.sale_date <= to && !ids.has(s.id))
     .map(s => ({ ...s, pending: true }));
-  report.sales = sales.concat(waiting).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  report.allSales = sales.concat(waiting).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  applyScope();
   report.failed = failed;
   $("reportDialogBody").classList.remove("loading");
   renderReport();
@@ -893,23 +1054,43 @@ function renderReport() {
   const r = aggregateSales(report.sales);
 
   $("reportTotal").textContent = money(r.grandTotal);
-  // With no buying prices at all, "profit" would just repeat total sales.
-  const noCosts = r.itemCount > 0 && r.itemsMissingCost === r.itemCount;
-  $("reportProfit").textContent = noCosts ? "Not tracked" : money(r.profitTotal);
-  $("reportMargin").textContent = noCosts ? "No stock prices yet"
-    : r.grandTotal ? `${r.marginPercent.toFixed(1)}% margin` : "";
-  $("reportCost").textContent = money(r.costTotal);
+  $("reportDiscount").textContent = r.discountTotal > 0
+    ? `🏷️ ${money(r.discountTotal)} discounts given on ${plural(r.discountedQty, "item")}` : "";
+  const expo = report.scope === "expo";
+  let profit = r.profitTotal;
+  if (expo) {
+    // Expo profit = Expo sales − prep bills (Expo items carry no stock price).
+    const billsTotal = sumExpenses(report.bills);
+    profit = PosCore.round2(r.grandTotal - billsTotal);
+    $("reportProfitLabel").textContent = "Expo profit";
+    $("reportProfit").textContent = signedMoney(profit);
+    $("reportMargin").textContent = r.grandTotal
+      ? `${((profit / r.grandTotal) * 100).toFixed(1)}% of sales · sales − bills` : "Sales − prep bills";
+    $("reportCostLabel").textContent = "Prep bills";
+    $("reportCost").textContent = money(billsTotal);
+    $("reportCostNote").textContent = report.bills.length ? plural(report.bills.length, "bill") : "None added yet";
+  } else {
+    // With no buying prices at all, "profit" would just repeat total sales.
+    const noCosts = r.itemCount > 0 && r.itemsMissingCost === r.itemCount;
+    $("reportProfitLabel").textContent = "Profit";
+    $("reportProfit").textContent = noCosts ? "Not tracked" : money(r.profitTotal);
+    $("reportMargin").textContent = noCosts ? "No stock prices yet"
+      : r.grandTotal ? `${r.marginPercent.toFixed(1)}% margin` : "";
+    $("reportCostLabel").textContent = "Stock cost";
+    $("reportCost").textContent = money(r.costTotal);
+    $("reportCostNote").textContent = "";
+  }
   $("reportTransactions").textContent = r.transactionCount;
   $("reportVoided").textContent = r.voidedCount ? `${r.voidedCount} voided` : "";
   $("reportItems").textContent = r.itemCount;
   $("reportAverage").textContent = money(r.averageSale);
-  document.querySelector(".report-card.profit").classList.toggle("negative", r.profitTotal < 0);
+  document.querySelector(".report-card.profit").classList.toggle("negative", profit < 0);
 
   const notices = [];
   if (report.failed) notices.push(["error", "⚠️ Couldn't load sales from the database. Check the connection. Only sales saved on this device are shown."]);
   const waiting = report.sales.filter(s => s.pending).length;
   if (waiting) notices.push(["warn", `⏳ Includes ${plural(waiting, "sale")} saved on this device that haven't uploaded yet.`]);
-  if (r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
+  if (!expo && r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
   const notice = $("reportNotice");
   notice.hidden = !notices.length;
   notice.innerHTML = notices.map(([cls, text]) => `<div class="notice ${cls}">${escapeHtml(text)}</div>`).join("");
@@ -918,7 +1099,8 @@ function renderReport() {
   renderPaymentBreakdown(r);
   renderTimeChart(r, from, to);
   renderProductTable(r);
-  renderStockReport(r);
+  if (expo) renderBills();
+  else renderStockReport(r);
   renderTransactions();
 }
 
@@ -930,7 +1112,7 @@ function signedMoney(value) {
 // One row per menu item (current stock and prices) plus any item that was
 // discarded in the period but has since been removed from the menu.
 function stockRows() {
-  const stock = stockSummary(products);
+  const stock = stockSummary(products.filter(tracksStock));
   const discards = aggregateDiscards(report.discards);
   const rows = stock.rows.map(row => {
     const d = discards.byProduct.get(row.name);
@@ -993,7 +1175,8 @@ function renderStockReport(r) {
       <td>${row.discarded || ""}</td>
       <td class="${row.loss > 0 ? "loss-text" : ""}">${row.loss > 0 ? money(row.loss) : ""}</td>
     </tr>
-  `).join("") : `<tr><td colspan="7" class="report-empty">No menu items yet.</td></tr>`;
+  `).join("") : `<tr><td colspan="7" class="report-empty">${products.length
+    ? "No items to track: Expo items don't keep stock. Items in other tabs show here." : "No menu items yet."}</td></tr>`;
 
   $("stockFoot").innerHTML = rows.length ? `
     <tr>
@@ -1024,7 +1207,8 @@ function renderBestSellers(r) {
   const fmt = row => by === "qty" ? `${row.qty} sold` : money(row[by]);
 
   const soldNames = new Set(r.productRows.map(p => p.name));
-  const unsold = products.filter(p => !soldNames.has(p.name)).map(p => p.name);
+  const inScope = p => tracksStock(p) !== (report.scope === "expo");
+  const unsold = products.filter(p => inScope(p) && !soldNames.has(p.name)).map(p => p.name);
 
   $("bestSellers").innerHTML = top.length ? top.map((row, i) => barRow({
     rank: i + 1,
@@ -1073,8 +1257,10 @@ function renderTimeChart(r, from, to) {
   } else {
     $("timeChartTitle").textContent = "📅 Sales by day";
     const totals = new Map(r.byDay.map(d => [d.date, d.total]));
+    // Long ranges (e.g. All time) start at the first day with sales.
+    const first = r.byDay.length && r.byDay[0].date > from ? r.byDay[0].date : from;
     points = [];
-    for (let d = from; d <= to && points.length < 400; d = addDays(d, 1)) {
+    for (let d = first; d <= to && points.length < 400; d = addDays(d, 1)) {
       points.push({
         label: String(parseDateKey(d).getDate()),
         value: totals.get(d) || 0,
@@ -1124,6 +1310,106 @@ function renderProductTable(r) {
   `).join("") : `<tr><td colspan="5" class="report-empty">No sales recorded for this period.</td></tr>`;
 }
 
+// ---------- Expo prep bills ----------
+
+function renderBills() {
+  const { bills, billsFailed } = report;
+  const editingId = $("billEditingId").value;
+  const notice = $("billNotice");
+  notice.hidden = !billsFailed;
+  notice.innerHTML = billsFailed ? `<div class="notice error">⚠️ Couldn't load bills. ${escapeHtml(billsFailed)}</div>` : "";
+  $("billList").innerHTML = bills.length ? `
+    <div class="bill-total"><span>${plural(bills.length, "bill")}</span><span>${money(sumExpenses(bills))}</span></div>` +
+    bills.map(b => `
+    <div class="bill-row ${b.id === editingId ? "editing" : ""}">
+      <span class="bill-date">${escapeHtml(formatDay(b.expense_date, { weekday: "short", day: "numeric", month: "short" }))}</span>
+      <span class="bill-what">${escapeHtml(b.description)}</span>
+      <strong>${money(b.amount)}</strong>
+      <span class="manage-actions">
+        <button type="button" class="small-btn" data-bill-edit="${escapeHtml(b.id)}">Edit</button>
+        <button type="button" class="small-btn delete" data-bill-delete="${escapeHtml(b.id)}" aria-label="Delete this bill">🗑</button>
+      </span>
+    </div>`).join("")
+    : `<div class="empty-state small"><span>No prep bills for these dates yet. Add each bill above.</span></div>`;
+}
+
+// New bills default to today, or the last day of the report when it ends earlier.
+function defaultBillDate() {
+  const today = localDateKey();
+  const { to } = reportRange();
+  return to < today ? to : today;
+}
+
+function resetBillForm() {
+  $("billEditingId").value = "";
+  $("billDate").value = defaultBillDate();
+  $("billDesc").value = "";
+  $("billAmount").value = "";
+  $("saveBillBtn").textContent = "Add bill";
+  $("cancelBillBtn").hidden = true;
+  $("billForm").classList.remove("editing");
+  if (report.scope === "expo") renderBills();
+}
+
+function loadBillForEdit(id) {
+  const bill = report.bills.find(b => b.id === id);
+  if (!bill) return;
+  $("billEditingId").value = bill.id;
+  $("billDate").value = bill.expense_date;
+  $("billDesc").value = bill.description;
+  $("billAmount").value = bill.amount;
+  $("saveBillBtn").textContent = "Save bill";
+  $("cancelBillBtn").hidden = false;
+  $("billForm").classList.add("editing");
+  renderBills();
+  $("billForm").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  $("billDesc").focus();
+}
+
+async function saveBill() {
+  const fields = { date: $("billDate").value, description: $("billDesc").value.trim(), amount: $("billAmount").value.trim() };
+  const error = expenseError(fields);
+  if (error) {
+    toast(error, "error");
+    return;
+  }
+  const row = { expense_date: fields.date, description: fields.description, amount: Number(fields.amount) };
+  const editingId = $("billEditingId").value;
+  const btn = $("saveBillBtn");
+  btn.disabled = true;
+  try {
+    if (editingId) await PosApi.updateExpense(editingId, row);
+    else await PosApi.insertExpense({ ...row, scope: "Expo" });
+  } catch (err) {
+    console.error("Failed to save bill:", err);
+    toast(`Couldn't save the bill. ${describeError(err)}`, "error", 8000);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  const { from, to } = reportRange();
+  const outside = fields.date < from || fields.date > to;
+  toast(`${editingId ? "Bill updated" : `Added ${money(row.amount)} bill`} ✓${outside ? " (dated outside these dates, so not shown)" : ""}`,
+    "success", outside ? 6000 : 3500);
+  resetBillForm();
+  await loadReport();
+}
+
+async function deleteBill(id) {
+  const bill = report.bills.find(b => b.id === id);
+  if (!bill || !confirm(`Delete the ${money(bill.amount)} bill for "${bill.description}"?`)) return;
+  try {
+    await PosApi.deleteExpense(id);
+  } catch (err) {
+    console.error("Failed to delete bill:", err);
+    toast(`Couldn't delete the bill. ${describeError(err)}`, "error", 8000);
+    return;
+  }
+  if ($("billEditingId").value === id) resetBillForm();
+  toast("Bill deleted", "info");
+  await loadReport();
+}
+
 function renderTransactions() {
   const { from, to } = reportRange();
   const multiDay = from !== to;
@@ -1144,7 +1430,8 @@ function renderTransactions() {
       <div class="txn-time">${escapeHtml(date + time)}</div>
       <div class="txn-items">${escapeHtml(summary)}${sale.voided ? ` <span class="chip-tag muted">VOID</span>` : ""}</div>
       <div class="txn-method">${escapeHtml(sale.payment_method)}</div>
-      <strong class="txn-total">${money(sale.total)}</strong>
+      <strong class="txn-total">${money(sale.total)}${sale.full_total > sale.total
+        ? `<small class="muted" title="The rest of this sale is in the other report"> of ${money(sale.full_total)}</small>` : ""}</strong>
       <div class="txn-action">${action}</div>
     </div>`;
   }).join("") + (all.length > shown.length
@@ -1156,8 +1443,8 @@ async function toggleVoid(id, voided) {
   const sale = report.sales.find(s => s.id === id);
   if (!sale) return;
   const question = voided
-    ? `Void this ${money(sale.total)} sale?\n\nIt will be left out of report totals but kept on record. You can restore it later.`
-    : `Restore this ${money(sale.total)} sale into the report totals?`;
+    ? `Void this ${money(sale.full_total)} sale?\n\nIt will be left out of report totals but kept on record. You can restore it later.`
+    : `Restore this ${money(sale.full_total)} sale into the report totals?`;
   if (!confirm(question)) return;
   try {
     await PosApi.setSaleVoided(id, voided);
@@ -1166,7 +1453,9 @@ async function toggleVoid(id, voided) {
     toast(`Couldn't update the sale. ${describeError(err)}`, "error", 8000);
     return;
   }
-  sale.voided = voided;
+  const full = report.allSales.find(s => s.id === id);
+  if (full) full.voided = voided;
+  applyScope();
   toast(voided ? "Sale voided" : "Sale restored", "success");
   renderReport();
 }
@@ -1181,7 +1470,8 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = from === to ? `brewzy-sales-${from}.csv` : `brewzy-sales-${from}-to-${to}.csv`;
+  const name = report.scope === "expo" ? "brewzy-expo-sales" : "brewzy-sales";
+  a.download = from === to ? `${name}-${from}.csv` : `${name}-${from}-to-${to}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1294,7 +1584,17 @@ $("closeItemDialogBtn").addEventListener("click", () => $("itemDialog").close())
 $("saveItemBtn").addEventListener("click", saveItem);
 $("resetFormBtn").addEventListener("click", () => resetItemForm());
 $("manageSearch").addEventListener("input", renderManageList);
-["itemPrice", "itemCost"].forEach(id => $(id).addEventListener("input", updateMarginPreview));
+$("itemCategory").addEventListener("input", updateStockFields);
+["itemPrice", "itemCost"].forEach(id => $(id).addEventListener("input", () => {
+  updateMarginPreview();
+  updateDiscountPreview();
+}));
+$("itemSalePrice").addEventListener("input", updateDiscountPreview);
+$("discountPicks").addEventListener("click", e => {
+  const chip = e.target.closest("[data-percent]");
+  if (chip) pickDiscount(Number(chip.dataset.percent));
+});
+$("removeDiscountBtn").addEventListener("click", removeDiscount);
 $("itemForm").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.tagName === "INPUT") {
     e.preventDefault();
@@ -1309,6 +1609,12 @@ $("emojiPicks").addEventListener("click", e => {
 $("manageItemList").addEventListener("click", e => {
   const edit = e.target.closest("[data-edit]");
   if (edit) return loadItemForEdit(edit.dataset.edit);
+  const discount = e.target.closest("[data-discount]");
+  if (discount) {
+    loadItemForEdit(discount.dataset.discount);
+    $("discountBox").scrollIntoView({ block: "center", behavior: "smooth" });
+    return $("itemSalePrice").focus();
+  }
   const discard = e.target.closest("[data-discard]");
   if (discard) {
     loadItemForEdit(discard.dataset.discard);
@@ -1374,6 +1680,24 @@ $("transactionList").addEventListener("click", e => {
   }
 });
 $("exportCsvBtn").addEventListener("click", exportCsv);
+$("reportScope").addEventListener("click", e => {
+  const btn = e.target.closest("[data-scope]");
+  if (btn && btn.dataset.scope !== report.scope) setScope(btn.dataset.scope);
+});
+$("saveBillBtn").addEventListener("click", saveBill);
+$("cancelBillBtn").addEventListener("click", resetBillForm);
+$("billForm").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.tagName === "INPUT") {
+    e.preventDefault();
+    saveBill();
+  }
+});
+$("billList").addEventListener("click", e => {
+  const edit = e.target.closest("[data-bill-edit]");
+  if (edit) return loadBillForEdit(edit.dataset.billEdit);
+  const del = e.target.closest("[data-bill-delete]");
+  if (del) deleteBill(del.dataset.billDelete);
+});
 setupTooltip($("salesReportDialog"));
 
 // Keyboard: "/" jumps to search.

@@ -17,6 +17,14 @@ const {
   discardError,
   stockSummary,
   aggregateDiscards,
+  hasDiscount,
+  sellingPrice,
+  discountPercent,
+  priceAfterPercentOff,
+  tracksStock,
+  scopeSales,
+  expenseError,
+  sumExpenses,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -154,7 +162,7 @@ test("salesToCsv writes one line per item and escapes commas/quotes", () => {
   const lines = csv.split("\r\n");
   assert.equal(lines.length, 2);
   assert.ok(lines[1].includes('"Tea, ""large"""'));
-  assert.ok(lines[1].endsWith(",2,15.00,5.00,30.00,20.00,"));
+  assert.ok(lines[1].endsWith(",2,15.00,5.00,30.00,20.00,,,"));
 });
 
 test("productError validates stock quantity as a whole number", () => {
@@ -200,4 +208,93 @@ test("aggregateDiscards sums quantity, loss at stock price and lost sales by pro
   assert.equal(d.qtyMissingCost, 3);
   assert.deepEqual(d.byProduct.get("Brownie"), { name: "Brownie", qty: 3, loss: 60, lostSales: 105 });
   assert.equal(aggregateDiscards([]).loss, 0);
+});
+
+test("hasDiscount / sellingPrice use the discount price only when it is below the regular price", () => {
+  assert.equal(sellingPrice({ price: 40, sale_price: 30 }), 30);
+  assert.equal(sellingPrice({ price: 40, sale_price: null }), 40);
+  assert.equal(sellingPrice({ price: 40 }), 40);
+  assert.equal(sellingPrice({ price: 40, sale_price: 40 }), 40); // not lower: no discount
+  assert.equal(sellingPrice({ price: 40, sale_price: 0 }), 0); // free
+  assert.equal(hasDiscount({ price: 40, sale_price: "" }), false);
+  assert.equal(hasDiscount({ price: 40, sale_price: "25" }), true);
+});
+
+test("discountPercent and priceAfterPercentOff", () => {
+  assert.equal(discountPercent(40, 30), 25);
+  assert.equal(discountPercent(0, 0), 0);
+  assert.equal(priceAfterPercentOff(40, 25), 30);
+  assert.equal(priceAfterPercentOff(35, 15), 29.75);
+});
+
+test("productError checks the discount price is valid and below the selling price", () => {
+  const base = { name: "Latte", price: "30", cost: "12", category: "Drinks" };
+  assert.equal(productError({ ...base, salePrice: "" }), null);
+  assert.equal(productError({ ...base, salePrice: "25" }), null);
+  assert.equal(typeof productError({ ...base, salePrice: "30" }), "string");
+  assert.equal(typeof productError({ ...base, salePrice: "35" }), "string");
+  assert.equal(typeof productError({ ...base, salePrice: "-1" }), "string");
+});
+
+test("discounted cart lines keep their regular price, and reports total the discount given", () => {
+  const items = cartToItems([
+    { name: "Brownie", category: "Desserts", price: 30, regular_price: 40, cost: 20, qty: 2 },
+    { name: "Tea", category: "Drinks", price: 15, regular_price: 15, cost: 5, qty: 1 },
+  ]);
+  assert.equal(items[0].regular_price, 40);
+  assert.equal("regular_price" in items[1], false);
+
+  const r = aggregateSales([
+    { payment_method: "Cash", total: 75, items },
+    { payment_method: "Cash", total: 30, voided: true, items: [items[0]] },
+  ]);
+  assert.equal(r.grandTotal, 75);
+  assert.equal(r.discountTotal, 20);
+  assert.equal(r.discountedQty, 2);
+  assert.equal(r.profitTotal, 30);
+
+  const csv = salesToCsv([{ id: "s", sale_date: "2026-10-25", payment_method: "Cash", items: [items[0]] }]);
+  assert.ok(csv.split("\r\n")[1].endsWith(",,40.00,20.00"));
+});
+
+test("stockSummary values stock at the discount price while one is set", () => {
+  const s = stockSummary([{ name: "Brownie", price: 40, sale_price: 30, cost: 20, stock_qty: 2 }]);
+  assert.equal(s.sellValue, 60);
+  assert.equal(s.rows[0].difference, 10);
+});
+
+test("tracksStock is off for the Expo category only", () => {
+  assert.equal(tracksStock({ category: "Desserts" }), true);
+  assert.equal(tracksStock({ category: "Expo" }), false);
+  assert.equal(tracksStock({ category: " expo " }), false);
+  assert.equal(tracksStock({}), true);
+});
+
+test("scopeSales splits sales into Expo and main items", () => {
+  const sales = [
+    { id: "a", total: 80, items: [
+      { name: "Boava Wrap", category: "Expo", price: 60, qty: 1 },
+      { name: "Tea", category: "Drinks", price: 10, qty: 2 },
+    ] },
+    { id: "b", total: 10, items: [{ name: "Tea", category: "Drinks", price: 10, qty: 1 }] },
+  ];
+  const expo = scopeSales(sales, "expo");
+  assert.equal(expo.length, 1);
+  assert.equal(expo[0].total, 60);
+  assert.equal(expo[0].full_total, 80);
+  assert.deepEqual(expo[0].items.map(i => i.name), ["Boava Wrap"]);
+  const main = scopeSales(sales, "main");
+  assert.deepEqual(main.map(s => s.total), [20, 10]);
+});
+
+test("expenseError and sumExpenses", () => {
+  assert.equal(expenseError({ date: "2026-10-25", description: "Flour", amount: "120" }), null);
+  assert.equal(typeof expenseError({ date: "", description: "Flour", amount: "120" }), "string");
+  assert.equal(typeof expenseError({ date: "2026-10-25", description: " ", amount: "120" }), "string");
+  assert.equal(typeof expenseError({ date: "2026-10-25", description: "Flour", amount: "0" }), "string");
+  assert.equal(sumExpenses([{ amount: 120.5 }, { amount: "79.5" }]), 200);
+});
+
+test("dateRange all covers everything up to today", () => {
+  assert.deepEqual(dateRange("all", new Date(2026, 9, 25)), { from: "2020-01-01", to: "2026-10-25" });
 });

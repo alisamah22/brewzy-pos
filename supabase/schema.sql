@@ -11,6 +11,7 @@ create table if not exists public.products (
   created_at timestamptz not null default now(),
   name       text not null,
   price      numeric not null,            -- selling price
+  sale_price numeric check (sale_price is null or sale_price >= 0), -- discount price; null = no discount
   cost       numeric not null default 0,  -- stock (buying) price
   stock_qty  integer not null default 0,  -- quantity in stock
   category   text not null,
@@ -71,6 +72,25 @@ create policy "anon delete discards" on public.discards for delete to anon using
 
 create index if not exists discards_discard_date_idx on public.discards (discard_date);
 create index if not exists discards_product_id_idx on public.discards (product_id);
+
+-- Bills (expenses) such as Expo prep shopping. "scope" says which report
+-- they belong to ('Expo' for now). Rows can be edited and deleted.
+create table if not exists public.expenses (
+  id           uuid primary key default gen_random_uuid(),
+  created_at   timestamptz not null default now(),
+  expense_date date not null,
+  description  text not null,
+  amount       numeric not null check (amount >= 0),
+  scope        text not null default 'Expo'
+);
+
+alter table public.expenses enable row level security;
+create policy "anon read expenses"   on public.expenses for select to anon using (true);
+create policy "anon insert expenses" on public.expenses for insert to anon with check (true);
+create policy "anon update expenses" on public.expenses for update to anon using (true) with check (true);
+create policy "anon delete expenses" on public.expenses for delete to anon using (true);
+
+create index if not exists expenses_expense_date_idx on public.expenses (expense_date);
 
 -- Optional one-time seed of the starting menu.
 -- Run this block ONCE; re-running it duplicates the items.

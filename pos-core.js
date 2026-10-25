@@ -42,6 +42,8 @@
         return { from: addDays(today, -6), to: today };
       case "month":
         return { from: localDateKey(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+      case "all":
+        return { from: "2020-01-01", to: today };
       case "lastMonth":
         return {
           from: localDateKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
@@ -52,21 +54,83 @@
     }
   }
 
+  // A discount is a sale price set below the regular selling price. Blank
+  // (null / undefined / "") means no discount.
+  function hasDiscount(product) {
+    const sale = product.sale_price;
+    if (sale === null || sale === undefined || sale === "") return false;
+    const n = Number(sale);
+    return Number.isFinite(n) && n >= 0 && n < Number(product.price);
+  }
+
+  // What the customer pays for one now: the discount price, else the regular price.
+  function sellingPrice(product) {
+    return hasDiscount(product) ? round2(product.sale_price) : Number(product.price) || 0;
+  }
+
+  // Whole-number "% off" for display, e.g. 40 -> 30 is 25.
+  function discountPercent(price, salePrice) {
+    const p = Number(price) || 0;
+    return p > 0 ? Math.round((1 - Number(salePrice) / p) * 100) : 0;
+  }
+
+  // Discount price for "N% off" a regular price.
+  function priceAfterPercentOff(price, percent) {
+    return round2((Number(price) || 0) * (1 - Number(percent) / 100));
+  }
+
+  // Expo items are sold at events and don't track stock or discards.
+  function tracksStock(product) {
+    return String(product.category || "").trim().toLowerCase() !== "expo";
+  }
+
+  // Sales narrowed to one report: "expo" keeps the Expo items of each sale,
+  // "main" keeps the rest. Totals are recomputed from the kept items; a sale
+  // with nothing kept is dropped. "full_total" keeps the whole sale's total.
+  function scopeSales(sales, scope) {
+    const wantExpo = scope === "expo";
+    const out = [];
+    for (const sale of sales) {
+      const items = (sale.items || []).filter((item) => tracksStock(item) !== wantExpo);
+      if (!items.length) continue;
+      const total = round2(items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 0), 0));
+      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0) });
+    }
+    return out;
+  }
+
+  function expenseError(fields) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date || "")) return "Please pick the date of the bill.";
+    if (!(fields.description || "").trim()) return "Please say what the bill was for.";
+    const amount = Number(fields.amount);
+    if (fields.amount === "" || !Number.isFinite(amount) || amount <= 0) return "Please enter the bill amount.";
+    return null;
+  }
+
+  function sumExpenses(expenses) {
+    return round2(expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0));
+  }
+
   function calcTotals(cart) {
     const subtotal = round2(cart.reduce((sum, item) => sum + item.price * item.qty, 0));
     return { subtotal, tax: 0, total: subtotal };
   }
 
   // Snapshot of each cart line stored with the sale. Cost is captured at sale
-  // time so later price changes don't rewrite past profit.
+  // time so later price changes don't rewrite past profit. "price" is what
+  // was charged; a discounted line also keeps its regular price.
   function cartToItems(cart) {
-    return cart.map((item) => ({
-      name: item.name,
-      category: item.category,
-      price: item.price,
-      cost: Number(item.cost) || 0,
-      qty: item.qty,
-    }));
+    return cart.map((item) => {
+      const line = {
+        name: item.name,
+        category: item.category,
+        price: item.price,
+        cost: Number(item.cost) || 0,
+        qty: item.qty,
+      };
+      if (Number(item.regular_price) > item.price) line.regular_price = Number(item.regular_price);
+      return line;
+    });
   }
 
   // Profit per unit and margin % of the selling price.
@@ -102,6 +166,8 @@
     let transactionCount = 0;
     let voidedCount = 0;
     let itemsMissingCost = 0;
+    let discountTotal = 0;
+    let discountedQty = 0;
 
     for (const sale of sales) {
       if (sale.voided) {
@@ -126,6 +192,11 @@
         if (!(cost > 0)) itemsMissingCost += qty;
         itemCount += qty;
         costTotal += cost * qty;
+        const regular = Number(item.regular_price || 0);
+        if (regular > price) {
+          discountTotal += (regular - price) * qty;
+          discountedQty += qty;
+        }
 
         const current = products.get(item.name) ||
           { name: item.name, category: item.category || "", qty: 0, sales: 0, cost: 0, profit: 0 };
@@ -156,6 +227,8 @@
       voidedCount,
       itemCount,
       itemsMissingCost,
+      discountTotal: round2(discountTotal),
+      discountedQty,
       averageSale: transactionCount ? round2(grandTotal / transactionCount) : 0,
       productRows,
       byHour: byHour.map(round2),
@@ -185,7 +258,11 @@
       const cost = Number(fields.cost);
       if (!Number.isFinite(cost) || cost < 0) return "Please enter a valid stock price.";
     }
-
+    if (fields.salePrice !== undefined && fields.salePrice !== "") {
+      const sale = Number(fields.salePrice);
+      if (!Number.isFinite(sale) || sale < 0) return "Please enter a valid discount price.";
+      if (sale >= price) return "The discount price must be lower than the selling price.";
+    }
     if (fields.stock !== undefined && fields.stock !== "") {
       const stock = Number(fields.stock);
       if (!Number.isInteger(stock) || stock < 0) return "Stock quantity must be a whole number (0 or more).";
@@ -203,7 +280,8 @@
   }
 
   // Current stock per menu item, valued at stock (buying) price and selling
-  // price. "difference" is selling minus stock price, per unit and in total.
+  // price (the discount price while one is set). "difference" is selling
+  // minus stock price, per unit and in total.
   function stockSummary(products) {
     let totalQty = 0;
     let costValue = 0;
@@ -211,7 +289,7 @@
     const rows = products.map((p) => {
       const qty = Number(p.stock_qty || 0);
       const cost = Number(p.cost || 0);
-      const price = Number(p.price || 0);
+      const price = sellingPrice(p);
       totalQty += qty;
       costValue += cost * qty;
       sellValue += price * qty;
@@ -268,7 +346,8 @@
   // One CSV line per item sold, for backups / spreadsheets.
   function salesToCsv(sales) {
     const header = ["Date", "Time", "Sale ID", "Payment", "Item", "Category", "Qty",
-      "Selling price", "Buying price", "Line total", "Line profit", "Voided"];
+      "Selling price", "Buying price", "Line total", "Line profit", "Voided",
+      "Regular price", "Discount given"];
     const lines = [header.join(",")];
     for (const sale of sales) {
       const time = sale.created_at
@@ -278,10 +357,13 @@
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
         const cost = Number(item.cost || 0);
+        const regular = Number(item.regular_price || 0);
+        const discounted = regular > price;
         lines.push([
           sale.sale_date, time, sale.id, sale.payment_method, item.name, item.category || "",
           qty, price.toFixed(2), cost.toFixed(2), (price * qty).toFixed(2),
           ((price - cost) * qty).toFixed(2), sale.voided ? "yes" : "",
+          discounted ? regular.toFixed(2) : "", discounted ? ((regular - price) * qty).toFixed(2) : "",
         ].map(csvCell).join(","));
       }
     }
@@ -292,6 +374,8 @@
     round2, money, localDateKey, parseDateKey, addDays, dateRange, calcTotals, cartToItems,
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
+    hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
+    scopeSales, expenseError, sumExpenses,
   };
 
   if (typeof module !== "undefined" && module.exports) {

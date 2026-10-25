@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <div class="app">
@@ -87,7 +87,7 @@
       <div class="modal-header">
         <div>
           <h2>Manage Items</h2>
-          <p>Add menu items with their stock price, selling price and quantity.</p>
+          <p>Add menu items with their stock price, selling price and quantity, and put items on discount.</p>
         </div>
         <button type="button" class="icon-btn" id="closeItemDialogBtn" aria-label="Close">✕</button>
       </div>
@@ -119,12 +119,35 @@
               Selling price (MVR)
               <input id="itemPrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="What the customer pays" />
             </label>
-            <label class="span-2">
+            <p class="no-stock-note span-2" id="noStockNote" hidden>📦 Expo items don't track stock quantity or discards.</p>
+            <label class="span-2" id="itemStockField">
               Stock quantity
               <input id="itemStock" type="number" inputmode="numeric" min="0" step="1" placeholder="How many you have" />
             </label>
           </div>
           <div class="margin-preview" id="marginPreview">Enter both prices to see the profit per item.</div>
+
+          <div class="discount-box" id="discountBox">
+            <div class="discount-head">
+              <span class="form-title">🏷️ Discount <small id="discountState" class="chip-tag muted">Off</small></span>
+              <button type="button" class="danger-text" id="removeDiscountBtn" hidden>Remove discount</button>
+            </div>
+            <p class="discount-help">Tap a discount, or type the discounted price. Leave it empty for no discount.</p>
+            <div class="discount-picks" id="discountPicks" role="group" aria-label="Quick discounts">
+              <button type="button" class="chip" data-percent="10">10% off</button>
+              <button type="button" class="chip" data-percent="15">15% off</button>
+              <button type="button" class="chip" data-percent="20">20% off</button>
+              <button type="button" class="chip" data-percent="25">25% off</button>
+              <button type="button" class="chip" data-percent="30">30% off</button>
+              <button type="button" class="chip" data-percent="50">50% off</button>
+            </div>
+            <label class="discount-input">
+              Discounted price (MVR)
+              <input id="itemSalePrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="No discount" />
+            </label>
+            <div class="discount-preview" id="discountPreview"></div>
+          </div>
+
           <div class="modal-actions">
             <button type="button" class="secondary" id="resetFormBtn">Cancel</button>
             <button type="button" class="primary" id="saveItemBtn">Add Item</button>
@@ -182,10 +205,15 @@
     <div class="modal report-modal" id="reportDialogBody">
       <div class="modal-header">
         <div>
-          <h2>Sales Report</h2>
+          <h2 id="reportTitle">Sales Report</h2>
           <p id="reportSubtitle">Sales, profit and best sellers.</p>
         </div>
         <button class="icon-btn" id="closeSalesReportBtn" type="button" aria-label="Close">✕</button>
+      </div>
+
+      <div class="scope-switch" id="reportScope" role="tablist" aria-label="Which report">
+        <button type="button" role="tab" data-scope="main" class="active" aria-selected="true">🏪 Main sales</button>
+        <button type="button" role="tab" data-scope="expo" aria-selected="false">🎪 Expo</button>
       </div>
 
       <div class="report-toolbar">
@@ -195,6 +223,7 @@
           <button type="button" data-preset="week">Last 7 days</button>
           <button type="button" data-preset="month">This month</button>
           <button type="button" data-preset="lastMonth">Last month</button>
+          <button type="button" data-preset="all">All time</button>
         </div>
         <div class="range-inputs">
           <label>From <input id="reportFrom" type="date" /></label>
@@ -206,9 +235,9 @@
       <div id="reportNotice" class="notice" hidden></div>
 
       <div class="report-cards">
-        <div class="report-card highlight"><span>Total sales</span><strong id="reportTotal">MVR 0.00</strong></div>
-        <div class="report-card profit"><span>Profit</span><strong id="reportProfit">MVR 0.00</strong><small id="reportMargin"></small></div>
-        <div class="report-card"><span>Stock cost</span><strong id="reportCost">MVR 0.00</strong></div>
+        <div class="report-card highlight"><span>Total sales</span><strong id="reportTotal">MVR 0.00</strong><small id="reportDiscount"></small></div>
+        <div class="report-card profit"><span id="reportProfitLabel">Profit</span><strong id="reportProfit">MVR 0.00</strong><small id="reportMargin"></small></div>
+        <div class="report-card" id="reportCostCard"><span id="reportCostLabel">Stock cost</span><strong id="reportCost">MVR 0.00</strong><small id="reportCostNote"></small></div>
         <div class="report-card"><span>Transactions</span><strong id="reportTransactions">0</strong><small id="reportVoided"></small></div>
         <div class="report-card"><span>Items sold</span><strong id="reportItems">0</strong></div>
         <div class="report-card"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
@@ -257,8 +286,24 @@
         </div>
       </section>
 
-      <section class="report-section">
-        <div class="section-head"><h3>📦 Stock &amp; discards</h3><span class="muted">Stock is the current quantity · discards are for the dates above</span></div>
+      <section class="report-section" id="billsSection" hidden>
+        <div class="section-head"><h3>🧾 Expo prep bills</h3><span class="muted">Shopping, ingredients, packaging, stall fee… for the dates above</span></div>
+        <div class="bill-form" id="billForm">
+          <input type="hidden" id="billEditingId" />
+          <label>Date <input id="billDate" type="date" /></label>
+          <label class="bill-desc">What was it for? <input id="billDesc" placeholder="e.g. Chicken and bread" autocomplete="off" /></label>
+          <label>Amount (MVR) <input id="billAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" /></label>
+          <div class="bill-actions">
+            <button type="button" class="secondary" id="cancelBillBtn" hidden>Cancel</button>
+            <button type="button" class="primary" id="saveBillBtn">Add bill</button>
+          </div>
+        </div>
+        <div id="billNotice" class="notice" hidden></div>
+        <div id="billList" class="bill-list"></div>
+      </section>
+
+      <section class="report-section" id="stockSection">
+        <div class="section-head"><h3>📦 Stock &amp; discards</h3><span class="muted">Stock is the current quantity · discards are for the dates above · Expo items not included</span></div>
         <div class="report-cards stock-cards">
           <div class="report-card"><span>Total stock quantity</span><strong id="stockQty">0</strong><small id="stockValue"></small></div>
           <div class="report-card"><span>Stock vs selling difference</span><strong id="stockDifference">MVR 0.00</strong><small id="stockSellValue"></small></div>
@@ -294,9 +339,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=3"></script>
-<script src="supabase-api.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="pos-core.js?v=4"></script>
+<script src="supabase-api.js?v=4"></script>
+<script src="app.js?v=4"></script>
 
 </body>
 </html>

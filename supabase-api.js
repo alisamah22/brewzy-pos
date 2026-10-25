@@ -111,6 +111,40 @@ async function deleteDiscard(id) {
   if (error) throw error;
 }
 
+// --- Bills (expenses), e.g. Expo prep shopping ---
+async function fetchExpensesInRange(fromKey, toKey, scope) {
+  let rows = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await supabaseClient
+      .from("expenses")
+      .select("*")
+      .eq("scope", scope)
+      .gte("expense_date", fromKey)
+      .lte("expense_date", toKey)
+      .order("expense_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(start, start + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows = rows.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) return rows;
+  }
+}
+
+async function insertExpense(expense) {
+  const { error } = await supabaseClient.from("expenses").insert(expense);
+  if (error) throw error;
+}
+
+async function updateExpense(id, fields) {
+  const { error } = await supabaseClient.from("expenses").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteExpense(id) {
+  const { error } = await supabaseClient.from("expenses").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // Cheap query used to check the database is reachable.
 async function ping() {
   const { error } = await supabaseClient.from("products").select("id").limit(1);
@@ -121,5 +155,6 @@ window.PosApi = {
   fetchProducts, insertProduct, updateProduct, deleteProduct,
   insertSale, fetchSalesInRange, setSaleVoided,
   fetchDiscardsForProduct, fetchDiscardsInRange, insertDiscard, updateDiscard, deleteDiscard,
+  fetchExpensesInRange, insertExpense, updateExpense, deleteExpense,
   ping,
 };

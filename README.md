@@ -9,6 +9,11 @@ daily reports are shared across devices.
 - Touch-friendly menu with search, category filters, and an "in order" badge on each item
 - Shared menu stored in Supabase: add / edit / delete items from any till, each with a
   **stock (buying) price**, **selling price** and **stock quantity** (the form shows the profit per item as you type)
+- **Discounts:** put any item on sale from Manage Items (**🏷️ Discount** on the item, or **Edit**).
+  Tap 10% / 15% / 20% / 25% / 30% / 50% off or type the discounted price; the form shows the old and new
+  price, what the customer saves and your profit at the new price. The till shows a sale badge and the
+  crossed-out regular price, the receipt shows "You saved", and the report shows the total discount given.
+  Clear the price (**Remove discount**) and save to end the sale
 - **Discarded stock:** record how many of an item were thrown away and on which date; each record
   can be edited or deleted later (Manage Items → **Discard**, or **Edit** on an item)
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
@@ -22,6 +27,10 @@ daily reports are shared across devices.
   total sales, profit and margin, buying cost, transactions, items sold, average sale,
   **best sellers** (by quantity, sales or profit), items not sold, payment-method split,
   sales by hour or by day, a sortable product table, a transaction list, and **CSV export**
+- **Expo report:** Reports has a **🏪 Main sales / 🎪 Expo** switch. Items in the **Expo** category are
+  reported on their own; add each Expo prep bill (date, what it was for, amount) in the Expo report and it
+  shows **Expo profit = Expo sales − prep bills**. Use **All time** to see the whole event. If one sale mixes
+  Expo and main items, each report counts only its own items. Expo items don't track stock or discards
 - **Stock & discards report:** total stock quantity and its value at stock and selling price, the
   difference between them, discarded quantity in the period, the discard loss (stock price × quantity
   discarded), what that stock would have sold for, and profit after discards, with a per-item table
@@ -47,6 +56,15 @@ voiding sales will show a "database needs a one-time update" message.
 once. It adds the `stock_qty` column to `products` (existing items start at 0) and the `discards`
 table. Until it is run, the till and sales report keep working, but stock quantities can't be saved
 and the report shows a "database needs a one-time update" note in the Stock & discards section.
+
+**Discounts:** run
+[`supabase/migrations/2026-10-25-discount-price.sql`](supabase/migrations/2026-10-25-discount-price.sql)
+once. It adds the `sale_price` column to `products` (empty = no discount). Until it is run, everything
+else keeps working, but saving a discount shows a "database needs a one-time update" message.
+
+**Expo prep bills:** run
+[`supabase/migrations/2026-10-25-expo-bills.sql`](supabase/migrations/2026-10-25-expo-bills.sql)
+once. It adds the `expenses` table. Until it is run, the Expo report shows sales but bills can't be saved.
 
 ### Keeping the project awake
 Supabase **pauses free-tier projects after about a week with no activity**. A paused project
