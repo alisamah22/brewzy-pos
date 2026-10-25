@@ -1607,7 +1607,8 @@ function updateTestBanner() {
     banner.innerHTML = `<strong>🧪 TEST MODE</strong> Sales before ${at} today are test sales: they show in reports until ${at}, then they're cleared.` +
       ` <span>The Expo opens at ${at} (in ${left}).</span>`;
   } else if (wasTestMode) {
-    toast("🎪 The Expo is open! Sales now count.", "success", 8000);
+    toast("🎪 The Expo is open! Test sales are cleared and sales now count.", "success", 8000);
+    if ($("salesReportDialog").open) loadReport(); // drop the test sales from an open report
   }
   banner.hidden = !until;
   if (Boolean(until) !== wasTestMode) {
