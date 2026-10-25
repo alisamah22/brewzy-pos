@@ -529,7 +529,7 @@ function showReceipt(sale, received, uploaded) {
     ${saved > 0 ? `<div class="r-line r-saved"><span>🏷️ You saved</span><strong>${money(saved)}</strong></div>` : ""}
     <div class="r-line"><span>Paid by</span><span>${escapeHtml(sale.payment_method)}</span></div>
     ${cash}
-    ${isTestSale(sale) ? `<div class="notice warn">🧪 Test sale: made before the Expo opened, so it isn't counted in reports.</div>` : ""}
+    ${isTestSale(sale) ? `<div class="notice warn">🧪 Test sale: it shows in reports until the Expo opens, then it's cleared.</div>` : ""}
     ${uploaded ? "" : `<div class="notice warn">⏳ No internet. The sale is saved on this device and will upload automatically when the connection is back.</div>`}
   `;
   $("receiptDialog").showModal();
@@ -1126,6 +1126,8 @@ function renderReport() {
   const waiting = report.sales.filter(s => s.pending).length;
   if (waiting) notices.push(["warn", `⏳ Includes ${plural(waiting, "sale")} saved on this device that haven't uploaded yet.`]);
   if (r.testCount) notices.push(["info", `🧪 ${plural(r.testCount, "test sale")} made before the Expo opened (25 Oct, 16:00) ${r.testCount === 1 ? "is" : "are"} not counted.`]);
+  const liveTests = report.sales.filter(s => s.testRun && !s.test && !s.voided).length;
+  if (liveTests) notices.push(["warn", `🧪 Test mode: ${plural(liveTests, "test sale")} ${liveTests === 1 ? "is" : "are"} counted for now so you can check the report. At 16:00 ${liveTests === 1 ? "it's" : "they're"} cleared and the Expo starts from zero.`]);
   if (r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
   const notice = $("reportNotice");
   notice.hidden = !notices.length;
@@ -1494,13 +1496,13 @@ function renderTransactions() {
     const summary = (sale.items || []).map(i => `${i.qty}× ${i.name}`).join(", ");
     let action = "";
     if (sale.pending) action = `<span class="chip-tag warn">⏳ Not uploaded</span>`;
-    else if (sale.test) action = `<span class="chip-tag muted">🧪 Test</span>`;
+    else if (sale.testRun) action = `<span class="chip-tag muted">🧪 Test</span>`;
     else if (sale.voided) action = `<button type="button" class="small-btn" data-unvoid="${escapeHtml(sale.id)}">Restore</button>`;
     else action = `<button type="button" class="small-btn delete" data-void="${escapeHtml(sale.id)}">Void</button>`;
     return `
     <div class="txn ${sale.voided || sale.test ? "voided" : ""}">
       <div class="txn-time">${escapeHtml(date + time)}</div>
-      <div class="txn-items">${escapeHtml(summary)}${sale.voided ? ` <span class="chip-tag muted">VOID</span>` : ""}${sale.test ? ` <span class="chip-tag muted">TEST</span>` : ""}</div>
+      <div class="txn-items">${escapeHtml(summary)}${sale.voided ? ` <span class="chip-tag muted">VOID</span>` : ""}${sale.testRun ? ` <span class="chip-tag muted">TEST</span>` : ""}</div>
       <div class="txn-method">${escapeHtml(sale.payment_method)}</div>
       <strong class="txn-total">${money(sale.total)}${sale.full_total > sale.total
         ? `<small class="muted" title="The rest of this sale is in the other report"> of ${money(sale.full_total)}</small>` : ""}</strong>
@@ -1602,7 +1604,7 @@ function updateTestBanner() {
     const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
     const left = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`;
     const at = until.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    banner.innerHTML = `<strong>🧪 TEST MODE</strong> Sales before ${at} today are test sales and won't be counted in reports.` +
+    banner.innerHTML = `<strong>🧪 TEST MODE</strong> Sales before ${at} today are test sales: they show in reports until ${at}, then they're cleared.` +
       ` <span>The Expo opens at ${at} (in ${left}).</span>`;
   } else if (wasTestMode) {
     toast("🎪 The Expo is open! Sales now count.", "success", 8000);

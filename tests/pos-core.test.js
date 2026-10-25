@@ -318,8 +318,9 @@ test("Expo runs from 25 Oct 2026 16:00 to 2 Nov; earlier sales that day are test
     { id: "expo", sale_date: "2026-10-28", created_at: "2026-10-28T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
     { id: "main", sale_date: "2026-11-05", created_at: "2026-11-05T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
   ];
-  assert.deepEqual(scopeSales(sales, "expo").map(s => s.id), ["expo"]);
-  const main = scopeSales(sales, "main");
+  const afterOpening = new Date(Date.parse("2026-10-26T09:00:00+05:00"));
+  assert.deepEqual(scopeSales(sales, "expo", afterOpening).map(s => s.id), ["expo"]);
+  const main = scopeSales(sales, "main", afterOpening);
   assert.deepEqual(main.map(s => [s.id, s.test]), [["test", true], ["main", false]]);
   const r = aggregateSales(main);
   assert.equal(r.grandTotal, 10);
@@ -374,4 +375,22 @@ test("cost prices added later fill in past sales that had none", () => {
   assert.equal(aggregateSales(sales).costTotal, 8); // without the lookup, saved costs only
   const csv = salesToCsv([{ id: "s", sale_date: "2026-10-25", payment_method: "Cash", items: [sales[0].items[0]] }], name => costs[name]);
   assert.ok(csv.split("\r\n")[1].includes(",1,60.00,35.00,60.00,25.00,"));
+});
+
+test("before the Expo opens, test sales count; from 16:00 they are cleared", () => {
+  const sale = { id: "t", sale_date: "2026-10-25", created_at: "2026-10-25T07:00:00Z", payment_method: "Cash",
+    total: 60, items: [{ name: "Boava Wrap", category: "Expo", price: 60, qty: 1 }] };
+  const opening = Date.parse("2026-10-25T16:00:00+05:00");
+  const during = new Date(opening - 30 * 60 * 1000);
+  const after = new Date(opening + 60 * 1000);
+  if (during.getDate() === 25) { // test mode is keyed to the till's local date
+    const live = scopeSales([sale], "expo", during);
+    assert.equal(live[0].testRun, true);
+    assert.equal(live[0].test, false);
+    assert.equal(aggregateSales(live).grandTotal, 60);
+  }
+  const later = scopeSales([sale], "expo", after);
+  assert.equal(later[0].test, true);
+  assert.equal(aggregateSales(later).grandTotal, 0);
+  assert.equal(aggregateSales(later).testCount, 1);
 });

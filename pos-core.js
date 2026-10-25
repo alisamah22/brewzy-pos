@@ -119,8 +119,12 @@
   // Sales narrowed to one report: "expo" keeps the Expo items of each sale
   // (all of them during an Expo), "main" keeps the rest. Totals are
   // recomputed from the kept items; a sale with nothing kept is dropped.
-  // "full_total" keeps the whole sale's total; "test" marks a test run.
-  function scopeSales(sales, scope) {
+  // "full_total" keeps the whole sale's total. "testRun" marks a sale made
+  // before the Expo opened; while the test run is still on (before opening
+  // time) those sales count, so the reports can be tried out, and once the
+  // Expo opens they get "test" and are left out of every total.
+  function scopeSales(sales, scope, now = new Date()) {
+    const testing = Boolean(testModeUntil(now));
     const wantExpo = scope === "expo";
     const out = [];
     for (const sale of sales) {
@@ -128,7 +132,8 @@
       const items = (sale.items || []).filter((item) => (expo || !tracksStock(item)) === wantExpo);
       if (!items.length) continue;
       const total = round2(items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 0), 0));
-      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0), test: isTestSale(sale) });
+      const testRun = isTestSale(sale);
+      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0), testRun, test: testRun && !testing });
     }
     return out;
   }
