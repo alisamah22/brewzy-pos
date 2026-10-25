@@ -70,6 +70,12 @@ else keeps working, but saving a discount shows a "database needs a one-time upd
 [`supabase/migrations/2026-10-25-expo-bills.sql`](supabase/migrations/2026-10-25-expo-bills.sql)
 once. It adds the `expenses` table. Until it is run, the Expo report shows sales but bills can't be saved.
 
+**Optional stock quantity:** run
+[`supabase/migrations/2026-10-25-optional-stock-qty.sql`](supabase/migrations/2026-10-25-optional-stock-qty.sql)
+once. Stock quantity can then be left empty (not counted) as well as 0. Until it is run, an empty stock
+quantity on a new item is saved as 0, and clearing it on an existing item shows a "database needs a one-time
+update" message.
+
 ### Keeping the project awake
 Supabase **pauses free-tier projects after about a week with no activity**. A paused project
 can't be reached (the app shows "Offline") until it's restored from the Supabase dashboard,

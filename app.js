@@ -202,10 +202,10 @@ async function checkConnection() {
 
 function normaliseProduct(p) {
   // stock_qty / sale_price stay undefined on a database without their
-  // migration; sale_price is null when the item has no discount.
+  // migration; null means no stock quantity set / no discount.
   return {
     ...p, price: Number(p.price), cost: Number(p.cost || 0),
-    stock_qty: p.stock_qty === undefined || p.stock_qty === null ? undefined : Number(p.stock_qty),
+    stock_qty: p.stock_qty === undefined ? undefined : p.stock_qty === null ? null : Number(p.stock_qty),
     sale_price: p.sale_price === undefined ? undefined : p.sale_price === null ? null : Number(p.sale_price),
   };
 }
@@ -556,7 +556,7 @@ function renderManageList() {
       ? `<span class="chip-tag ${m.profit < 0 ? "loss" : "gain"}">${m.profit < 0 ? "▼" : "▲"} ${money(m.profit)} · ${m.percent.toFixed(0)}%</span>`
       : `<span class="chip-tag muted">No stock price</span>`;
     const tracked = tracksStock(product);
-    const stockChip = product.stock_qty === undefined || !tracked ? ""
+    const stockChip = product.stock_qty === undefined || product.stock_qty === null || !tracked ? ""
       : `<span class="chip-tag ${product.stock_qty > 0 ? "" : "warn"}">Qty ${product.stock_qty}</span>`;
     const onSale = hasDiscount(product);
     const saleChip = onSale
@@ -692,7 +692,7 @@ function loadItemForEdit(id) {
   $("itemName").value = product.name;
   $("itemPrice").value = product.price;
   $("itemCost").value = product.cost || "";
-  $("itemStock").value = product.stock_qty === undefined ? "" : product.stock_qty;
+  $("itemStock").value = product.stock_qty === undefined || product.stock_qty === null ? "" : product.stock_qty;
   $("itemSalePrice").value = hasDiscount(product) ? product.sale_price : "";
   $("itemCategory").value = product.category;
   $("itemEmoji").value = product.emoji || "";
@@ -747,9 +747,11 @@ async function saveItem() {
     emoji: $("itemEmoji").value.trim() || "🍽️",
   };
   // Left out when blank so items still save before the stock migration is run.
-  if (fields.stock !== "") row.stock_qty = Number(fields.stock);
-  // Same for the discount: only sent when one is set, or to clear one.
+  // Stock quantity is optional: emptying it on a tracked item clears it.
   const existing = products.find(p => p.id === editingId);
+  if (fields.stock !== "") row.stock_qty = Number(fields.stock);
+  else if (existing && tracksStock(fields) && existing.stock_qty !== undefined && existing.stock_qty !== null) row.stock_qty = null;
+  // Same for the discount: only sent when one is set, or to clear one.
   if (fields.salePrice !== "") row.sale_price = Number(fields.salePrice);
   else if (existing && existing.sale_price !== undefined && existing.sale_price !== null) row.sale_price = null;
 

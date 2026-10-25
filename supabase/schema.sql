@@ -13,7 +13,7 @@ create table if not exists public.products (
   price      numeric not null,            -- selling price
   sale_price numeric check (sale_price is null or sale_price >= 0), -- discount price; null = no discount
   cost       numeric not null default 0,  -- stock (buying) price
-  stock_qty  integer not null default 0,  -- quantity in stock
+  stock_qty  integer,                     -- quantity in stock (optional; null = not counted)
   category   text not null,
   emoji      text
 );

@@ -793,3 +793,5 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .split-box.disc { background: var(--sale-soft); border-color: transparent; }
 .split-box.disc strong, .split-box.disc small, .split-box.disc span { color: var(--sale); }
 #productTable tfoot td { font-weight: 800; border-top: 2px solid var(--line); }
+
+.form-grid .optional { color: var(--muted); font-weight: 600; }
