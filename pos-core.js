@@ -203,6 +203,7 @@
     let itemsMissingCost = 0;
     let discountTotal = 0;
     let discountedQty = 0;
+    let discountSales = 0;
 
     for (const sale of sales) {
       if (sale.voided) {
@@ -235,12 +236,17 @@
         if (regular > price) {
           discountTotal += (regular - price) * qty;
           discountedQty += qty;
+          discountSales += price * qty;
         }
 
         const current = products.get(item.name) ||
           { name: item.name, category: item.category || "", qty: 0, sales: 0, cost: 0, profit: 0,
-            discountQty: 0, discountSales: 0, discountPrices: [] };
+            discountQty: 0, discountSales: 0, discountPrices: [], regularQty: 0, regularSales: 0 };
         current.qty += qty;
+        if (!(regular > price)) {
+          current.regularQty += qty;
+          current.regularSales = round2(current.regularSales + price * qty);
+        }
         if (regular > price) {
           current.discountQty += qty;
           current.discountSales = round2(current.discountSales + price * qty);
@@ -275,6 +281,9 @@
       itemsMissingCost,
       discountTotal: round2(discountTotal),
       discountedQty,
+      discountSales: round2(discountSales),
+      regularQty: itemCount - discountedQty,
+      regularSales: round2(grandTotal - discountSales),
       averageSale: transactionCount ? round2(grandTotal / transactionCount) : 0,
       productRows,
       byHour: byHour.map(round2),

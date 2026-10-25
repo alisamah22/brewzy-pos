@@ -733,10 +733,7 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .report-modal.expo .report-card.highlight { background: var(--expo-soft); border-color: rgba(91,60,196,.35); }
 
 /* Expo items carry no stock price, so per-item cost and profit columns are hidden. */
-.report-modal.expo #productTable th:nth-child(4),
-.report-modal.expo #productTable td:nth-child(4),
-.report-modal.expo #productTable th:nth-child(5),
-.report-modal.expo #productTable td:nth-child(5),
+.report-modal.expo #productTable .col-cost,
 .report-modal.expo #bestBy [data-by="profit"] { display: none; }
 
 .bill-form {
@@ -785,3 +782,14 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
   color: var(--sale); font-weight: 800; font-size: 13px;
 }
 .price-toggle.on { background: var(--sale-soft); color: var(--muted); border-color: var(--line); }
+
+/* Regular vs discount price split above the product table */
+.price-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.price-split:empty { display: none; }
+.split-box { border: 1px solid var(--line); border-radius: 14px; padding: 11px 14px; background: var(--panel-soft); }
+.split-box span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.split-box strong { font-size: 18px; display: block; }
+.split-box small { color: var(--muted); font-size: 13px; }
+.split-box.disc { background: var(--sale-soft); border-color: transparent; }
+.split-box.disc strong, .split-box.disc small, .split-box.disc span { color: var(--sale); }
+#productTable tfoot td { font-weight: 800; border-top: 2px solid var(--line); }

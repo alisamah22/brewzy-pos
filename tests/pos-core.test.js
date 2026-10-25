@@ -351,4 +351,10 @@ test("aggregateSales gives each product its discount price and quantity sold at 
   assert.equal(row.discountQty, 3);
   assert.equal(row.discountSales, 90);
   assert.deepEqual(row.discountPrices, [30]);
+  assert.equal(row.regularQty, 1);
+  assert.equal(row.regularSales, 40);
+  assert.equal(r.discountedQty, 3);
+  assert.equal(r.discountSales, 90);
+  assert.equal(r.regularQty, 1);
+  assert.equal(r.regularSales, 40);
 });

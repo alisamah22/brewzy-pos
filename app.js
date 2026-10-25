@@ -1331,17 +1331,38 @@ function renderProductTable(r) {
     th.setAttribute("aria-sort", active ? (sortDir > 0 ? "ascending" : "descending") : "none");
     th.dataset.arrow = active ? (sortDir > 0 ? "▲" : "▼") : "";
   });
+  const disc = (n, text) => (n ? `<strong class="sale-tag">${text}</strong>` : `<span class="muted">${text}</span>`);
   $("productSalesBody").innerHTML = rows.length ? rows.map(item => `
     <tr>
       <td>${escapeHtml(productFor(item.name)?.emoji || "🍽️")} ${escapeHtml(item.name)}</td>
-      <td>${item.qty}</td>
-      <td>${money(item.sales)}</td>
-      <td>${money(item.cost)}</td>
-      <td class="${item.profit < 0 ? "loss-text" : ""}">${item.profit < 0 ? "−" : ""}${money(Math.abs(item.profit))}</td>
+      <td><strong>${item.qty}</strong></td>
+      <td>${item.regularQty}</td>
+      <td>${disc(item.discountQty, item.discountQty)}</td>
       <td>${discountPriceCell(item)}</td>
-      <td>${item.discountQty ? `<strong class="sale-tag">${item.discountQty}</strong>` : `<span class="muted">0</span>`}</td>
+      <td>${disc(item.discountQty, money(item.discountSales))}</td>
+      <td>${money(item.sales)}</td>
+      <td class="col-cost">${money(item.cost)}</td>
+      <td class="col-cost ${item.profit < 0 ? "loss-text" : ""}">${item.profit < 0 ? "−" : ""}${money(Math.abs(item.profit))}</td>
     </tr>
-  `).join("") : `<tr><td colspan="7" class="report-empty">No sales recorded for this period.</td></tr>`;
+  `).join("") : `<tr><td colspan="9" class="report-empty">No sales recorded for this period.</td></tr>`;
+
+  $("productSalesFoot").innerHTML = rows.length ? `
+    <tr>
+      <td>Total</td>
+      <td>${r.itemCount}</td>
+      <td>${r.regularQty}</td>
+      <td>${r.discountedQty}</td>
+      <td></td>
+      <td>${money(r.discountSales)}</td>
+      <td>${money(r.grandTotal)}</td>
+      <td class="col-cost">${money(r.costTotal)}</td>
+      <td class="col-cost">${signedMoney(r.profitTotal)}</td>
+    </tr>` : "";
+
+  $("priceSplit").innerHTML = r.itemCount ? `
+    <div class="split-box"><span>Sold at regular price</span><strong>${plural(r.regularQty, "item")}</strong><small>${money(r.regularSales)}</small></div>
+    <div class="split-box disc"><span>🏷️ Sold at discount price</span><strong>${plural(r.discountedQty, "item")}</strong>
+      <small>${money(r.discountSales)}${r.discountTotal > 0 ? ` · ${money(r.discountTotal)} given off` : ""}</small></div>` : "";
 }
 
 // ---------- Expo prep bills ----------

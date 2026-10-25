@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=8" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
   <div class="app">
@@ -274,18 +274,22 @@
 
       <section class="report-section">
         <div class="section-head"><h3>📦 All products</h3><span class="muted">Tap a column to sort</span></div>
+        <div class="price-split" id="priceSplit"></div>
         <div class="report-table-wrap">
           <table class="report-table" id="productTable">
             <thead><tr>
               <th data-sort="name">Product</th>
-              <th data-sort="qty">Qty</th>
-              <th data-sort="sales">Sales</th>
+              <th data-sort="qty">Total qty</th>
+              <th data-sort="regularQty">Qty at regular price</th>
+              <th data-sort="discountQty">Qty at discount price</th>
+              <th data-sort="discountPrice">Discount price</th>
+              <th data-sort="discountSales">Discount price sales</th>
+              <th data-sort="sales">Total sales</th>
               <th data-sort="cost" class="col-cost">Cost</th>
               <th data-sort="profit" class="col-cost">Profit</th>
-              <th data-sort="discountPrice">Discount price</th>
-              <th data-sort="discountQty">Sold at discount</th>
             </tr></thead>
             <tbody id="productSalesBody"></tbody>
+            <tfoot id="productSalesFoot"></tfoot>
           </table>
         </div>
       </section>
@@ -343,9 +347,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=8"></script>
-<script src="supabase-api.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="pos-core.js?v=9"></script>
+<script src="supabase-api.js?v=9"></script>
+<script src="app.js?v=9"></script>
 
 </body>
 </html>
