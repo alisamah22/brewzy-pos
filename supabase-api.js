@@ -68,6 +68,49 @@ async function setSaleVoided(id, voided) {
   if (error) throw error;
 }
 
+// --- Discarded stock ---
+async function fetchDiscardsForProduct(productId) {
+  const { data, error } = await supabaseClient
+    .from("discards")
+    .select("*")
+    .eq("product_id", productId)
+    .order("discard_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function fetchDiscardsInRange(fromKey, toKey) {
+  let rows = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await supabaseClient
+      .from("discards")
+      .select("*")
+      .gte("discard_date", fromKey)
+      .lte("discard_date", toKey)
+      .order("discard_date", { ascending: true })
+      .range(start, start + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows = rows.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) return rows;
+  }
+}
+
+async function insertDiscard(discard) {
+  const { error } = await supabaseClient.from("discards").insert(discard);
+  if (error) throw error;
+}
+
+async function updateDiscard(id, fields) {
+  const { error } = await supabaseClient.from("discards").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteDiscard(id) {
+  const { error } = await supabaseClient.from("discards").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // Cheap query used to check the database is reachable.
 async function ping() {
   const { error } = await supabaseClient.from("products").select("id").limit(1);
@@ -76,5 +119,7 @@ async function ping() {
 
 window.PosApi = {
   fetchProducts, insertProduct, updateProduct, deleteProduct,
-  insertSale, fetchSalesInRange, setSaleVoided, ping,
+  insertSale, fetchSalesInRange, setSaleVoided,
+  fetchDiscardsForProduct, fetchDiscardsInRange, insertDiscard, updateDiscard, deleteDiscard,
+  ping,
 };

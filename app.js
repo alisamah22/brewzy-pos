@@ -4,6 +4,7 @@
 const {
   money, localDateKey, parseDateKey, addDays, dateRange, calcTotals, cartToItems, margin,
   quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
+  discardError, stockSummary, aggregateDiscards,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
@@ -43,6 +44,10 @@ let saving = false;
 const report = {
   preset: "today",
   sales: [],
+  discards: [],
+  discardsFailed: false,
+  stockSortKey: "loss",
+  stockSortDir: -1,
   bestBy: "qty",
   sortKey: "qty",
   sortDir: -1,
@@ -81,7 +86,7 @@ function isNetworkError(err) {
 
 function describeError(err) {
   const msg = String((err && (err.message || err.details)) || "");
-  if (/column/i.test(msg) && /cost|voided/i.test(msg)) {
+  if ((/column/i.test(msg) && /cost|voided|stock_qty/i.test(msg)) || /discards/i.test(msg)) {
     return "The database needs a one-time update: run the migration SQL from the README.";
   }
   if (/permission denied|row-level security/i.test(msg)) {
@@ -189,7 +194,11 @@ async function checkConnection() {
 // ---------- Menu ----------
 
 function normaliseProduct(p) {
-  return { ...p, price: Number(p.price), cost: Number(p.cost || 0) };
+  // stock_qty stays undefined on a database without the stock migration.
+  return {
+    ...p, price: Number(p.price), cost: Number(p.cost || 0),
+    stock_qty: p.stock_qty === undefined || p.stock_qty === null ? undefined : Number(p.stock_qty),
+  };
 }
 
 // Load the shared menu from Supabase; fall back to the cached copy if offline.
@@ -499,17 +508,20 @@ function renderManageList() {
     const m = margin(product.price, product.cost);
     const profitChip = product.cost > 0
       ? `<span class="chip-tag ${m.profit < 0 ? "loss" : "gain"}">${m.profit < 0 ? "▼" : "▲"} ${money(m.profit)} · ${m.percent.toFixed(0)}%</span>`
-      : `<span class="chip-tag muted">No buying price</span>`;
+      : `<span class="chip-tag muted">No stock price</span>`;
+    const stockChip = product.stock_qty === undefined ? ""
+      : `<span class="chip-tag ${product.stock_qty > 0 ? "" : "warn"}">Qty ${product.stock_qty}</span>`;
     return `
     <div class="manage-row ${product.id === editingId ? "editing" : ""}">
       <div class="manage-emoji" aria-hidden="true">${escapeHtml(product.emoji || "🍽️")}</div>
       <div class="manage-info">
         <strong>${escapeHtml(product.name)}</strong>
-        <small>${escapeHtml(product.category)} · Buy ${money(product.cost)} · Sell ${money(product.price)}</small>
-        ${profitChip}
+        <small>${escapeHtml(product.category)} · Stock ${money(product.cost)} · Sell ${money(product.price)}</small>
+        ${profitChip} ${stockChip}
       </div>
       <div class="manage-actions">
         <button type="button" class="small-btn" data-edit="${escapeHtml(product.id)}">Edit</button>
+        <button type="button" class="small-btn" data-discard="${escapeHtml(product.id)}" aria-label="Record discarded ${escapeHtml(product.name)}">Discard</button>
         <button type="button" class="small-btn delete" data-delete="${escapeHtml(product.id)}" aria-label="Delete ${escapeHtml(product.name)}">🗑</button>
       </div>
     </div>`;
@@ -532,13 +544,13 @@ function updateMarginPreview() {
     return;
   }
   if (costRaw === "") {
-    el.textContent = "Add the buying price to track profit in reports.";
+    el.textContent = "Add the stock price to track profit in reports.";
     return;
   }
   const m = margin(priceRaw, costRaw);
   if (m.profit < 0) {
     el.classList.add("loss");
-    el.textContent = `⚠️ Selling below buying price: a loss of ${money(-m.profit)} on each one.`;
+    el.textContent = `⚠️ Selling below stock price: a loss of ${money(-m.profit)} on each one.`;
   } else {
     el.classList.add("gain");
     el.textContent = `Profit per item: ${money(m.profit)} (${m.percent.toFixed(1)}% margin)`;
@@ -552,6 +564,7 @@ function loadItemForEdit(id) {
   $("itemName").value = product.name;
   $("itemPrice").value = product.price;
   $("itemCost").value = product.cost || "";
+  $("itemStock").value = product.stock_qty === undefined ? "" : product.stock_qty;
   $("itemCategory").value = product.category;
   $("itemEmoji").value = product.emoji || "";
   $("formTitle").textContent = `Editing: ${product.name}`;
@@ -560,16 +573,18 @@ function loadItemForEdit(id) {
   $("itemForm").classList.add("editing");
   updateMarginPreview();
   renderManageList();
+  openDiscardPanel(product);
   $("itemForm").scrollIntoView({ block: "nearest", behavior: "smooth" });
   $("itemName").focus();
 }
 
 function resetItemForm(focus = true) {
-  ["editingId", "itemName", "itemPrice", "itemCost", "itemCategory", "itemEmoji"].forEach(id => { $(id).value = ""; });
+  ["editingId", "itemName", "itemPrice", "itemCost", "itemStock", "itemCategory", "itemEmoji"].forEach(id => { $(id).value = ""; });
   $("formTitle").textContent = "Add a new item";
   $("saveItemBtn").textContent = "Add Item";
   $("resetFormBtn").hidden = true;
   $("itemForm").classList.remove("editing");
+  closeDiscardPanel();
   updateMarginPreview();
   renderManageList();
   if (focus) $("itemName").focus();
@@ -581,6 +596,7 @@ async function saveItem() {
     category: $("itemCategory").value.trim(),
     price: $("itemPrice").value,
     cost: $("itemCost").value,
+    stock: $("itemStock").value.trim(),
   };
   const editingId = $("editingId").value;
 
@@ -596,6 +612,8 @@ async function saveItem() {
     cost: fields.cost === "" ? 0 : Number(fields.cost),
     emoji: $("itemEmoji").value.trim() || "🍽️",
   };
+  // Left out when blank so items still save before the stock migration is run.
+  if (fields.stock !== "") row.stock_qty = Number(fields.stock);
 
   const saveBtn = $("saveItemBtn");
   saveBtn.disabled = true;
@@ -627,6 +645,169 @@ async function deleteItem(id) {
   if ($("editingId").value === id) resetItemForm(false);
   toast(`Deleted “${product.name}”`, "info");
   await loadProducts();
+}
+
+// ---------- Discarded stock (per item, in the Manage Items form) ----------
+
+const discardState = { productId: "", entries: [], loading: false, failed: false, token: 0 };
+
+function openDiscardPanel(product) {
+  $("discardPanel").hidden = false;
+  if (discardState.productId === product.id) return; // already showing this item
+  discardState.productId = product.id;
+  resetDiscardForm();
+  loadDiscards();
+}
+
+function closeDiscardPanel() {
+  $("discardPanel").hidden = true;
+  discardState.productId = "";
+  discardState.entries = [];
+  discardState.token += 1; // ignore any load still in flight
+}
+
+async function loadDiscards() {
+  const productId = discardState.productId;
+  const token = ++discardState.token;
+  discardState.loading = true;
+  discardState.failed = false;
+  renderDiscardList();
+  let entries = [];
+  try {
+    entries = await PosApi.fetchDiscardsForProduct(productId);
+  } catch (err) {
+    console.error("Failed to load discards:", err);
+    discardState.failed = describeError(err);
+  }
+  if (token !== discardState.token) return;
+  discardState.entries = entries;
+  discardState.loading = false;
+  renderDiscardList();
+}
+
+function renderDiscardList() {
+  const product = products.find(p => p.id === discardState.productId);
+  const editingId = $("discardEditingId").value;
+  const { entries, loading, failed } = discardState;
+  let html;
+  if (loading) {
+    html = `<div class="empty-state small"><span>Loading discards…</span></div>`;
+  } else if (failed) {
+    html = `<div class="notice error">⚠️ Couldn't load discards. ${escapeHtml(failed)}</div>`;
+  } else if (!entries.length) {
+    html = `<div class="empty-state small"><span>Nothing discarded for this item yet.</span></div>`;
+  } else {
+    const total = aggregateDiscards(entries);
+    html = `<div class="discard-total">Total discarded: <strong>${total.qty}</strong> · Loss ${money(total.loss)}</div>` +
+      entries.map(d => `
+      <div class="discard-row ${d.id === editingId ? "editing" : ""}">
+        <div>
+          <strong>${d.qty} discarded</strong>
+          <small>${escapeHtml(formatDay(d.discard_date, { weekday: "short", day: "numeric", month: "short", year: "numeric" }))}
+            · Loss ${money(Number(d.cost || 0) * d.qty)}</small>
+        </div>
+        <div class="manage-actions">
+          <button type="button" class="small-btn" data-discard-edit="${escapeHtml(d.id)}">Edit</button>
+          <button type="button" class="small-btn delete" data-discard-delete="${escapeHtml(d.id)}" aria-label="Delete this discard">🗑</button>
+        </div>
+      </div>`).join("");
+  }
+  $("discardTitle").textContent = product ? `Discarded stock: ${product.name}` : "Discarded stock";
+  $("discardList").innerHTML = html;
+}
+
+function updateDiscardPreview() {
+  const el = $("discardPreview");
+  const product = products.find(p => p.id === discardState.productId);
+  const qty = Number($("discardQty").value);
+  if (!product || !(qty > 0)) {
+    el.textContent = "";
+    return;
+  }
+  // An edited entry keeps the prices saved with it.
+  const entry = discardState.entries.find(d => d.id === $("discardEditingId").value);
+  const cost = entry ? Number(entry.cost || 0) : product.cost;
+  const price = entry ? Number(entry.price || 0) : product.price;
+  el.textContent = cost > 0
+    ? `Loss ${money(cost * qty)} at stock price (would have sold for ${money(price * qty)})`
+    : `No stock price set for this item, so the loss will show as ${money(0)}.`;
+}
+
+function resetDiscardForm() {
+  $("discardEditingId").value = "";
+  $("discardQty").value = "";
+  $("discardDate").value = localDateKey();
+  $("saveDiscardBtn").textContent = "Add discard";
+  $("cancelDiscardBtn").hidden = true;
+  updateDiscardPreview();
+  renderDiscardList();
+}
+
+function loadDiscardForEdit(id) {
+  const entry = discardState.entries.find(d => d.id === id);
+  if (!entry) return;
+  $("discardEditingId").value = entry.id;
+  $("discardQty").value = entry.qty;
+  $("discardDate").value = entry.discard_date;
+  $("saveDiscardBtn").textContent = "Save discard";
+  $("cancelDiscardBtn").hidden = false;
+  updateDiscardPreview();
+  renderDiscardList();
+  $("discardQty").focus();
+}
+
+async function saveDiscard() {
+  const product = products.find(p => p.id === discardState.productId);
+  if (!product) return;
+  const fields = { qty: $("discardQty").value.trim(), date: $("discardDate").value };
+  const error = discardError(fields);
+  if (error) {
+    toast(error, "error");
+    return;
+  }
+  const editingId = $("discardEditingId").value;
+  const btn = $("saveDiscardBtn");
+  btn.disabled = true;
+  try {
+    if (editingId) {
+      await PosApi.updateDiscard(editingId, { qty: Number(fields.qty), discard_date: fields.date });
+    } else {
+      // Prices are saved with the discard so later price changes don't
+      // rewrite past losses.
+      await PosApi.insertDiscard({
+        product_id: product.id,
+        product_name: product.name,
+        qty: Number(fields.qty),
+        cost: product.cost,
+        price: product.price,
+        discard_date: fields.date,
+      });
+    }
+  } catch (err) {
+    console.error("Failed to save discard:", err);
+    toast(`Couldn't save the discard. ${describeError(err)}`, "error", 8000);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  toast(editingId ? "Discard updated ✓" : `Recorded ${fields.qty} discarded ${product.name} ✓`, "success");
+  resetDiscardForm();
+  await loadDiscards();
+}
+
+async function deleteDiscardEntry(id) {
+  const entry = discardState.entries.find(d => d.id === id);
+  if (!entry || !confirm(`Delete this record of ${entry.qty} discarded ${entry.product_name}?`)) return;
+  try {
+    await PosApi.deleteDiscard(id);
+  } catch (err) {
+    console.error("Failed to delete discard:", err);
+    toast(`Couldn't delete the discard. ${describeError(err)}`, "error", 8000);
+    return;
+  }
+  if ($("discardEditingId").value === id) resetDiscardForm();
+  toast("Discard deleted", "info");
+  await loadDiscards();
 }
 
 // ---------- Reports ----------
@@ -674,6 +855,15 @@ async function loadReport() {
 
   let sales = [];
   let failed = false;
+  let discards = [];
+  let discardsFailed = false;
+  // Discards load separately so a database without the discards table
+  // still shows the sales report.
+  const discardsRequest = PosApi.fetchDiscardsInRange(from, to).catch(err => {
+    console.error("Failed to load discards:", err);
+    discardsFailed = describeError(err);
+    return [];
+  });
   try {
     sales = await PosApi.fetchSalesInRange(from, to);
     setOnline(true);
@@ -682,7 +872,10 @@ async function loadReport() {
     failed = true;
     if (isNetworkError(err)) setOnline(false);
   }
+  discards = await discardsRequest;
   if (token !== report.token) return; // a newer request replaced this one
+  report.discards = discards;
+  report.discardsFailed = discardsFailed;
 
   // Include sales still waiting to upload from this till.
   const ids = new Set(sales.map(s => s.id));
@@ -703,7 +896,7 @@ function renderReport() {
   // With no buying prices at all, "profit" would just repeat total sales.
   const noCosts = r.itemCount > 0 && r.itemsMissingCost === r.itemCount;
   $("reportProfit").textContent = noCosts ? "Not tracked" : money(r.profitTotal);
-  $("reportMargin").textContent = noCosts ? "No buying prices yet"
+  $("reportMargin").textContent = noCosts ? "No stock prices yet"
     : r.grandTotal ? `${r.marginPercent.toFixed(1)}% margin` : "";
   $("reportCost").textContent = money(r.costTotal);
   $("reportTransactions").textContent = r.transactionCount;
@@ -716,7 +909,7 @@ function renderReport() {
   if (report.failed) notices.push(["error", "⚠️ Couldn't load sales from the database. Check the connection. Only sales saved on this device are shown."]);
   const waiting = report.sales.filter(s => s.pending).length;
   if (waiting) notices.push(["warn", `⏳ Includes ${plural(waiting, "sale")} saved on this device that haven't uploaded yet.`]);
-  if (r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no buying price, so the profit shown is higher than the real profit. Add buying prices in Manage Items.`]);
+  if (r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
   const notice = $("reportNotice");
   notice.hidden = !notices.length;
   notice.innerHTML = notices.map(([cls, text]) => `<div class="notice ${cls}">${escapeHtml(text)}</div>`).join("");
@@ -725,7 +918,93 @@ function renderReport() {
   renderPaymentBreakdown(r);
   renderTimeChart(r, from, to);
   renderProductTable(r);
+  renderStockReport(r);
   renderTransactions();
+}
+
+// Signed money: "−MVR 5.00" for losses.
+function signedMoney(value) {
+  return `${value < 0 ? "−" : ""}${money(Math.abs(value))}`;
+}
+
+// One row per menu item (current stock and prices) plus any item that was
+// discarded in the period but has since been removed from the menu.
+function stockRows() {
+  const stock = stockSummary(products);
+  const discards = aggregateDiscards(report.discards);
+  const rows = stock.rows.map(row => {
+    const d = discards.byProduct.get(row.name);
+    return { ...row, discarded: d ? d.qty : 0, loss: d ? d.loss : 0, lostSales: d ? d.lostSales : 0 };
+  });
+  const onMenu = new Set(rows.map(r => r.name));
+  for (const d of discards.byProduct.values()) {
+    if (onMenu.has(d.name)) continue;
+    rows.push({ name: d.name, qty: null, cost: null, price: null, difference: null,
+      discarded: d.qty, loss: d.loss, lostSales: d.lostSales, removed: true });
+  }
+  return { stock, discards, rows };
+}
+
+function renderStockReport(r) {
+  const { stock, discards, rows } = stockRows();
+  const stockTracked = products.some(p => p.stock_qty !== undefined);
+
+  $("stockQty").textContent = stockTracked ? stock.totalQty : "Not set up";
+  $("stockValue").textContent = stockTracked ? `Worth ${money(stock.costValue)} at stock price` : "";
+  $("stockDifference").textContent = stockTracked ? signedMoney(stock.difference) : "—";
+  $("stockSellValue").textContent = stockTracked ? `Sells for ${money(stock.sellValue)}` : "";
+  $("discardQtyTotal").textContent = discards.qty;
+  $("discardCount").textContent = report.discards.length ? plural(report.discards.length, "record") : "";
+  $("discardLoss").textContent = money(discards.loss);
+  $("discardLostSales").textContent = discards.qty ? `Would have sold for ${money(discards.lostSales)}` : "";
+  const net = PosCore.round2(r.profitTotal - discards.loss);
+  $("netProfit").textContent = signedMoney(net);
+  $("netProfit").classList.toggle("loss-text", net < 0);
+
+  const notices = [];
+  if (report.discardsFailed) notices.push(["error", `⚠️ Couldn't load discards. ${report.discardsFailed}`]);
+  else if (!stockTracked && products.length) notices.push(["warn", "The database needs a one-time update for stock: run the migration SQL from the README."]);
+  if (discards.qtyMissingCost) notices.push(["info", `ℹ️ ${plural(discards.qtyMissingCost, "discarded item")} had no stock price, so the discard loss shown is lower than the real loss.`]);
+  const notice = $("stockNotice");
+  notice.hidden = !notices.length;
+  notice.innerHTML = notices.map(([cls, text]) => `<div class="notice ${cls}">${escapeHtml(text)}</div>`).join("");
+
+  const { stockSortKey: key, stockSortDir: dir } = report;
+  const val = row => (row[key] === null ? -Infinity : row[key]);
+  rows.sort((a, b) => {
+    const cmp = key === "name" ? a.name.localeCompare(b.name) : val(a) - val(b);
+    return cmp * dir || a.name.localeCompare(b.name);
+  });
+  document.querySelectorAll("#stockTable th").forEach(th => {
+    const active = th.dataset.sort === key;
+    th.classList.toggle("sorted", active);
+    th.setAttribute("aria-sort", active ? (dir > 0 ? "ascending" : "descending") : "none");
+    th.dataset.arrow = active ? (dir > 0 ? "▲" : "▼") : "";
+  });
+
+  const cell = (value, fmt) => (value === null ? `<span class="muted">—</span>` : fmt(value));
+  $("stockBody").innerHTML = rows.length ? rows.map(row => `
+    <tr>
+      <td>${escapeHtml(productFor(row.name)?.emoji || "🍽️")} ${escapeHtml(row.name)}${row.removed ? ` <span class="chip-tag muted">removed</span>` : ""}</td>
+      <td>${cell(row.qty, q => (stockTracked ? q : "—"))}</td>
+      <td>${cell(row.cost, money)}</td>
+      <td>${cell(row.price, money)}</td>
+      <td class="${row.difference < 0 ? "loss-text" : ""}">${cell(row.difference, signedMoney)}</td>
+      <td>${row.discarded || ""}</td>
+      <td class="${row.loss > 0 ? "loss-text" : ""}">${row.loss > 0 ? money(row.loss) : ""}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="7" class="report-empty">No menu items yet.</td></tr>`;
+
+  $("stockFoot").innerHTML = rows.length ? `
+    <tr>
+      <td>Total</td>
+      <td>${stockTracked ? stock.totalQty : "—"}</td>
+      <td>${stockTracked ? money(stock.costValue) : "—"}</td>
+      <td>${stockTracked ? money(stock.sellValue) : "—"}</td>
+      <td class="${stock.difference < 0 ? "loss-text" : ""}">${stockTracked ? signedMoney(stock.difference) : "—"}</td>
+      <td>${discards.qty}</td>
+      <td class="${discards.loss > 0 ? "loss-text" : ""}">${money(discards.loss)}</td>
+    </tr>` : "";
 }
 
 function barRow({ rank, label, value, share, tip }) {
@@ -1019,7 +1298,8 @@ $("manageSearch").addEventListener("input", renderManageList);
 $("itemForm").addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.tagName === "INPUT") {
     e.preventDefault();
-    saveItem();
+    if (e.target.closest("#discardPanel")) saveDiscard();
+    else saveItem();
   }
 });
 $("emojiPicks").addEventListener("click", e => {
@@ -1029,8 +1309,23 @@ $("emojiPicks").addEventListener("click", e => {
 $("manageItemList").addEventListener("click", e => {
   const edit = e.target.closest("[data-edit]");
   if (edit) return loadItemForEdit(edit.dataset.edit);
+  const discard = e.target.closest("[data-discard]");
+  if (discard) {
+    loadItemForEdit(discard.dataset.discard);
+    $("discardPanel").scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return $("discardQty").focus();
+  }
   const del = e.target.closest("[data-delete]");
   if (del) deleteItem(del.dataset.delete);
+});
+$("saveDiscardBtn").addEventListener("click", saveDiscard);
+$("cancelDiscardBtn").addEventListener("click", resetDiscardForm);
+$("discardQty").addEventListener("input", updateDiscardPreview);
+$("discardList").addEventListener("click", e => {
+  const edit = e.target.closest("[data-discard-edit]");
+  if (edit) return loadDiscardForEdit(edit.dataset.discardEdit);
+  const del = e.target.closest("[data-discard-delete]");
+  if (del) deleteDiscardEntry(del.dataset.discardDelete);
 });
 
 // Reports
@@ -1059,6 +1354,14 @@ $("productTable").querySelector("thead").addEventListener("click", e => {
   report.sortDir = report.sortKey === key ? -report.sortDir : (key === "name" ? 1 : -1);
   report.sortKey = key;
   renderProductTable(aggregateSales(report.sales));
+});
+$("stockTable").querySelector("thead").addEventListener("click", e => {
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const key = th.dataset.sort;
+  report.stockSortDir = report.stockSortKey === key ? -report.stockSortDir : (key === "name" ? 1 : -1);
+  report.stockSortKey = key;
+  renderStockReport(aggregateSales(report.sales));
 });
 $("transactionList").addEventListener("click", e => {
   const v = e.target.closest("[data-void]");

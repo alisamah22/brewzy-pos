@@ -2,8 +2,8 @@
 -- Run this once in the Supabase dashboard: SQL Editor -> New query -> Run.
 --
 -- Already have the tables from an earlier version? Don't re-run this file —
--- run supabase/migrations/2026-09-24-buying-price-and-keep-sales.sql instead.
--- It adds the new columns without touching your data.
+-- run the files in supabase/migrations/ (oldest first) instead.
+-- They add the new columns and tables without touching your data.
 
 -- Products (the shared menu)
 create table if not exists public.products (
@@ -11,7 +11,8 @@ create table if not exists public.products (
   created_at timestamptz not null default now(),
   name       text not null,
   price      numeric not null,            -- selling price
-  cost       numeric not null default 0,  -- buying price
+  cost       numeric not null default 0,  -- stock (buying) price
+  stock_qty  integer not null default 0,  -- quantity in stock
   category   text not null,
   emoji      text
 );
@@ -47,6 +48,29 @@ revoke update, delete, truncate on public.sales from anon, authenticated;
 grant update (voided, voided_at) on public.sales to anon;
 
 create index if not exists sales_sale_date_idx on public.sales (sale_date);
+
+-- Discarded stock. Each row is one discard of one item on one date. The
+-- stock and selling price are saved with the row so later price changes
+-- don't rewrite past losses. Rows can be edited and deleted from the app.
+create table if not exists public.discards (
+  id           uuid primary key default gen_random_uuid(),
+  created_at   timestamptz not null default now(),
+  product_id   uuid references public.products(id) on delete set null,
+  product_name text not null,
+  qty          integer not null check (qty > 0),
+  cost         numeric not null default 0,  -- stock (buying) price per unit
+  price        numeric not null default 0,  -- selling price per unit
+  discard_date date not null
+);
+
+alter table public.discards enable row level security;
+create policy "anon read discards"   on public.discards for select to anon using (true);
+create policy "anon insert discards" on public.discards for insert to anon with check (true);
+create policy "anon update discards" on public.discards for update to anon using (true) with check (true);
+create policy "anon delete discards" on public.discards for delete to anon using (true);
+
+create index if not exists discards_discard_date_idx on public.discards (discard_date);
+create index if not exists discards_product_id_idx on public.discards (product_id);
 
 -- Optional one-time seed of the starting menu.
 -- Run this block ONCE; re-running it duplicates the items.

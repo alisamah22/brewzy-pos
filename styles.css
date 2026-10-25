@@ -648,3 +648,35 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
   .receipt-icon, .receipt-actions { display: none; }
   .receipt { border: 0; padding: 0; }
 }
+
+/* ---------- Stock & discards ---------- */
+.discard-panel { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.discard-preview { font-size: 13px; font-weight: 700; color: var(--danger); min-height: 1em; }
+.discard-list { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: white; max-height: 260px; overflow-y: auto; }
+.discard-total { padding: 9px 13px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--panel-soft); }
+.discard-total strong { color: var(--text); }
+.discard-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 9px 13px; border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.discard-row:last-child { border-bottom: 0; }
+.discard-row.editing { background: var(--primary-soft); }
+.discard-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.discard-list .empty-state.small, .discard-list .notice { margin: 0; }
+
+.report-cards.stock-cards { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0 0 12px; }
+.report-card.loss { background: var(--danger-soft); border-color: transparent; }
+.report-card.loss strong, .report-card.loss small { color: var(--danger); }
+.report-card strong.loss-text { color: var(--danger); }
+.report-table tfoot td {
+  position: sticky; bottom: 0; background: var(--panel-soft); font-weight: 800;
+  border-top: 1px solid var(--line); border-bottom: 0;
+}
+.report-table .muted { color: var(--muted); }
+
+@media (max-width: 1000px) {
+  .report-cards.stock-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .report-cards.stock-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

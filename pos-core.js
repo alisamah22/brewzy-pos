@@ -183,9 +183,81 @@
     }
     if (fields.cost !== undefined && fields.cost !== "") {
       const cost = Number(fields.cost);
-      if (!Number.isFinite(cost) || cost < 0) return "Please enter a valid buying price.";
+      if (!Number.isFinite(cost) || cost < 0) return "Please enter a valid stock price.";
+    }
+
+    if (fields.stock !== undefined && fields.stock !== "") {
+      const stock = Number(fields.stock);
+      if (!Number.isInteger(stock) || stock < 0) return "Stock quantity must be a whole number (0 or more).";
     }
     return null;
+  }
+
+  function discardError(fields) {
+    const qty = Number(fields.qty);
+    if (fields.qty === "" || !Number.isInteger(qty) || qty <= 0) {
+      return "Discarded quantity must be a whole number above 0.";
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date || "")) return "Please pick the date it was discarded.";
+    return null;
+  }
+
+  // Current stock per menu item, valued at stock (buying) price and selling
+  // price. "difference" is selling minus stock price, per unit and in total.
+  function stockSummary(products) {
+    let totalQty = 0;
+    let costValue = 0;
+    let sellValue = 0;
+    const rows = products.map((p) => {
+      const qty = Number(p.stock_qty || 0);
+      const cost = Number(p.cost || 0);
+      const price = Number(p.price || 0);
+      totalQty += qty;
+      costValue += cost * qty;
+      sellValue += price * qty;
+      return {
+        name: p.name, category: p.category || "", qty, cost, price,
+        difference: round2(price - cost),
+        costValue: round2(cost * qty),
+        sellValue: round2(price * qty),
+      };
+    });
+    costValue = round2(costValue);
+    sellValue = round2(sellValue);
+    return { rows, totalQty, costValue, sellValue, difference: round2(sellValue - costValue) };
+  }
+
+  // Roll discard rows up by product name. "loss" is what the discarded stock
+  // cost (stock price × qty, using the price saved with the discard);
+  // "lostSales" is what it would have sold for.
+  function aggregateDiscards(discards) {
+    const products = new Map();
+    let qty = 0;
+    let loss = 0;
+    let lostSales = 0;
+    let qtyMissingCost = 0;
+    for (const d of discards) {
+      const q = Number(d.qty || 0);
+      const cost = Number(d.cost || 0);
+      const price = Number(d.price || 0);
+      qty += q;
+      loss += cost * q;
+      lostSales += price * q;
+      if (!(cost > 0)) qtyMissingCost += q;
+      const name = d.product_name;
+      const current = products.get(name) || { name, qty: 0, loss: 0, lostSales: 0 };
+      current.qty += q;
+      current.loss = round2(current.loss + cost * q);
+      current.lostSales = round2(current.lostSales + price * q);
+      products.set(name, current);
+    }
+    return {
+      qty,
+      loss: round2(loss),
+      lostSales: round2(lostSales),
+      qtyMissingCost,
+      byProduct: products,
+    };
   }
 
   function csvCell(value) {
@@ -219,6 +291,7 @@
   const api = {
     round2, money, localDateKey, parseDateKey, addDays, dateRange, calcTotals, cartToItems,
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
+    discardError, stockSummary, aggregateDiscards,
   };
 
   if (typeof module !== "undefined" && module.exports) {

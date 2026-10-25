@@ -8,7 +8,9 @@ daily reports are shared across devices.
 ## Features
 - Touch-friendly menu with search, category filters, and an "in order" badge on each item
 - Shared menu stored in Supabase: add / edit / delete items from any till, each with a
-  **buying price** and **selling price** (the form shows the profit per item as you type)
+  **stock (buying) price**, **selling price** and **stock quantity** (the form shows the profit per item as you type)
+- **Discarded stock:** record how many of an item were thrown away and on which date; each record
+  can be edited or deleted later (Manage Items → **Discard**, or **Edit** on an item)
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
   that show the change to give, or how much cash is short
 - Cash / Transfer / Card payment, itemised receipt with a Print button
@@ -20,6 +22,9 @@ daily reports are shared across devices.
   total sales, profit and margin, buying cost, transactions, items sold, average sale,
   **best sellers** (by quantity, sales or profit), items not sold, payment-method split,
   sales by hour or by day, a sortable product table, a transaction list, and **CSV export**
+- **Stock & discards report:** total stock quantity and its value at stock and selling price, the
+  difference between them, discarded quantity in the period, the discard loss (stock price × quantity
+  discarded), what that stock would have sold for, and profit after discards, with a per-item table
 
 ## Supabase setup
 **New database:** open **SQL Editor → New query**, paste
@@ -36,6 +41,12 @@ once. It keeps all your data and:
 
 Until the migration is run, selling still works, but saving items with a buying price and
 voiding sales will show a "database needs a one-time update" message.
+
+**Stock and discards:** run
+[`supabase/migrations/2026-10-12-stock-and-discards.sql`](supabase/migrations/2026-10-12-stock-and-discards.sql)
+once. It adds the `stock_qty` column to `products` (existing items start at 0) and the `discards`
+table. Until it is run, the till and sales report keep working, but stock quantities can't be saved
+and the report shows a "database needs a one-time update" note in the Stock & discards section.
 
 ### Keeping the project awake
 Supabase **pauses free-tier projects after about a week with no activity**. A paused project
@@ -78,3 +89,6 @@ node --test tests/pos-core.test.js
 - Profit uses the buying price saved with each sale, so changing an item's buying price
   later doesn't change past reports. Sales from before buying prices existed count as zero
   cost, and the report says when that affects the profit figure.
+- Discards work the same way: the stock and selling price are saved with each discard record.
+- Stock quantity is a number you set in Manage Items. Sales and discards don't change it
+  automatically, so update it when you restock or count.

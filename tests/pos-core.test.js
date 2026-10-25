@@ -14,6 +14,9 @@ const {
   bestSellers,
   productError,
   salesToCsv,
+  discardError,
+  stockSummary,
+  aggregateDiscards,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -152,4 +155,49 @@ test("salesToCsv writes one line per item and escapes commas/quotes", () => {
   assert.equal(lines.length, 2);
   assert.ok(lines[1].includes('"Tea, ""large"""'));
   assert.ok(lines[1].endsWith(",2,15.00,5.00,30.00,20.00,"));
+});
+
+test("productError validates stock quantity as a whole number", () => {
+  const base = { name: "Latte", price: 30, cost: 12, category: "Drinks" };
+  assert.equal(productError({ ...base, stock: "" }), null);
+  assert.equal(productError({ ...base, stock: "0" }), null);
+  assert.equal(productError({ ...base, stock: "24" }), null);
+  assert.equal(typeof productError({ ...base, stock: "-1" }), "string");
+  assert.equal(typeof productError({ ...base, stock: "2.5" }), "string");
+});
+
+test("discardError needs a positive whole quantity and a date", () => {
+  assert.equal(discardError({ qty: "3", date: "2026-10-12" }), null);
+  assert.equal(typeof discardError({ qty: "", date: "2026-10-12" }), "string");
+  assert.equal(typeof discardError({ qty: "0", date: "2026-10-12" }), "string");
+  assert.equal(typeof discardError({ qty: "1.5", date: "2026-10-12" }), "string");
+  assert.equal(typeof discardError({ qty: "2", date: "" }), "string");
+});
+
+test("stockSummary totals quantity, value at stock and selling price, and the difference", () => {
+  const s = stockSummary([
+    { name: "Brownie", price: 35, cost: 20, stock_qty: 10 },
+    { name: "Tea", price: 15, cost: 0, stock_qty: 4 },
+    { name: "Old", price: 5, cost: 2 }, // no stock column yet
+  ]);
+  assert.equal(s.totalQty, 14);
+  assert.equal(s.costValue, 200);
+  assert.equal(s.sellValue, 410);
+  assert.equal(s.difference, 210);
+  assert.equal(s.rows[0].difference, 15);
+  assert.equal(s.rows[2].qty, 0);
+});
+
+test("aggregateDiscards sums quantity, loss at stock price and lost sales by product", () => {
+  const d = aggregateDiscards([
+    { product_name: "Brownie", qty: 2, cost: 20, price: 35 },
+    { product_name: "Brownie", qty: 1, cost: 20, price: 35 },
+    { product_name: "Tea", qty: 3, cost: 0, price: 15 },
+  ]);
+  assert.equal(d.qty, 6);
+  assert.equal(d.loss, 60);
+  assert.equal(d.lostSales, 150);
+  assert.equal(d.qtyMissingCost, 3);
+  assert.deepEqual(d.byProduct.get("Brownie"), { name: "Brownie", qty: 3, loss: 60, lostSales: 105 });
+  assert.equal(aggregateDiscards([]).loss, 0);
 });

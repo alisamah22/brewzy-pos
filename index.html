@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <div class="app">
@@ -87,7 +87,7 @@
       <div class="modal-header">
         <div>
           <h2>Manage Items</h2>
-          <p>Add menu items with their buying and selling price.</p>
+          <p>Add menu items with their stock price, selling price and quantity.</p>
         </div>
         <button type="button" class="icon-btn" id="closeItemDialogBtn" aria-label="Close">✕</button>
       </div>
@@ -112,18 +112,44 @@
             </label>
             <div class="emoji-picks span-2" id="emojiPicks"></div>
             <label>
-              Buying price (MVR)
+              Stock price (MVR)
               <input id="itemCost" type="number" inputmode="decimal" min="0" step="0.01" placeholder="What it costs you" />
             </label>
             <label>
               Selling price (MVR)
               <input id="itemPrice" type="number" inputmode="decimal" min="0" step="0.01" placeholder="What the customer pays" />
             </label>
+            <label class="span-2">
+              Stock quantity
+              <input id="itemStock" type="number" inputmode="numeric" min="0" step="1" placeholder="How many you have" />
+            </label>
           </div>
           <div class="margin-preview" id="marginPreview">Enter both prices to see the profit per item.</div>
           <div class="modal-actions">
             <button type="button" class="secondary" id="resetFormBtn">Cancel</button>
             <button type="button" class="primary" id="saveItemBtn">Add Item</button>
+          </div>
+
+          <!-- Shown while editing an item -->
+          <div class="discard-panel" id="discardPanel" hidden>
+            <div class="form-title" id="discardTitle">Discarded stock</div>
+            <input type="hidden" id="discardEditingId" />
+            <div class="form-grid">
+              <label>
+                Discarded quantity
+                <input id="discardQty" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 3" />
+              </label>
+              <label>
+                Date discarded
+                <input id="discardDate" type="date" />
+              </label>
+            </div>
+            <div class="discard-preview" id="discardPreview"></div>
+            <div class="modal-actions">
+              <button type="button" class="secondary" id="cancelDiscardBtn" hidden>Cancel</button>
+              <button type="button" class="primary" id="saveDiscardBtn">Add discard</button>
+            </div>
+            <div id="discardList" class="discard-list"></div>
           </div>
         </div>
 
@@ -182,7 +208,7 @@
       <div class="report-cards">
         <div class="report-card highlight"><span>Total sales</span><strong id="reportTotal">MVR 0.00</strong></div>
         <div class="report-card profit"><span>Profit</span><strong id="reportProfit">MVR 0.00</strong><small id="reportMargin"></small></div>
-        <div class="report-card"><span>Buying cost</span><strong id="reportCost">MVR 0.00</strong></div>
+        <div class="report-card"><span>Stock cost</span><strong id="reportCost">MVR 0.00</strong></div>
         <div class="report-card"><span>Transactions</span><strong id="reportTransactions">0</strong><small id="reportVoided"></small></div>
         <div class="report-card"><span>Items sold</span><strong id="reportItems">0</strong></div>
         <div class="report-card"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
@@ -232,6 +258,33 @@
       </section>
 
       <section class="report-section">
+        <div class="section-head"><h3>📦 Stock &amp; discards</h3><span class="muted">Stock is the current quantity · discards are for the dates above</span></div>
+        <div class="report-cards stock-cards">
+          <div class="report-card"><span>Total stock quantity</span><strong id="stockQty">0</strong><small id="stockValue"></small></div>
+          <div class="report-card"><span>Stock vs selling difference</span><strong id="stockDifference">MVR 0.00</strong><small id="stockSellValue"></small></div>
+          <div class="report-card"><span>Discarded quantity</span><strong id="discardQtyTotal">0</strong><small id="discardCount"></small></div>
+          <div class="report-card loss"><span>Discard loss</span><strong id="discardLoss">MVR 0.00</strong><small id="discardLostSales"></small></div>
+          <div class="report-card"><span>Profit after discards</span><strong id="netProfit">MVR 0.00</strong><small>Sales profit − discard loss</small></div>
+        </div>
+        <div id="stockNotice" class="notice" hidden></div>
+        <div class="report-table-wrap">
+          <table class="report-table" id="stockTable">
+            <thead><tr>
+              <th data-sort="name">Item</th>
+              <th data-sort="qty">Stock qty</th>
+              <th data-sort="cost">Stock price</th>
+              <th data-sort="price">Selling price</th>
+              <th data-sort="difference">Difference</th>
+              <th data-sort="discarded">Discarded</th>
+              <th data-sort="loss">Discard loss</th>
+            </tr></thead>
+            <tbody id="stockBody"></tbody>
+            <tfoot id="stockFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="report-section">
         <div class="section-head"><h3>🧾 Transactions</h3><span class="muted">Void a sale entered by mistake — it stays on record</span></div>
         <div id="transactionList" class="transaction-list"></div>
       </section>
@@ -241,9 +294,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=2"></script>
-<script src="supabase-api.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="pos-core.js?v=3"></script>
+<script src="supabase-api.js?v=3"></script>
+<script src="app.js?v=3"></script>
 
 </body>
 </html>
