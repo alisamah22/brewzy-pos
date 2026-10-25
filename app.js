@@ -127,6 +127,12 @@ function productFor(name) {
   return products.find(p => p.name === name);
 }
 
+// Current cost price of a menu item, used in reports for sales made before
+// the item had a cost price.
+function currentCost(name) {
+  return productFor(name)?.cost || 0;
+}
+
 // ---------- Connection status & offline sales ----------
 
 function setOnline(value) {
@@ -1072,7 +1078,7 @@ async function loadReport() {
 
 function renderReport() {
   const { from, to } = reportRange();
-  const r = aggregateSales(report.sales);
+  const r = aggregateSales(report.sales, currentCost);
 
   $("reportTotal").textContent = money(r.grandTotal);
   $("reportDiscount").textContent = r.discountTotal > 0
@@ -1321,7 +1327,8 @@ function discountPriceCell(row) {
 function renderProductTable(r) {
   const { sortKey, sortDir } = report;
   const rows = [...r.productRows].sort((a, b) => {
-    const val = row => (sortKey === "discountPrice" ? row.discountPrices[0] || 0 : row[sortKey]);
+    const val = row => (sortKey === "discountPrice" ? row.discountPrices[0] || 0
+      : sortKey === "unitCost" ? (row.qty ? row.cost / row.qty : 0) : row[sortKey]);
     const cmp = sortKey === "name" ? a.name.localeCompare(b.name) : val(a) - val(b);
     return cmp * sortDir || a.name.localeCompare(b.name);
   });
@@ -1341,10 +1348,11 @@ function renderProductTable(r) {
       <td>${discountPriceCell(item)}</td>
       <td>${disc(item.discountQty, money(item.discountSales))}</td>
       <td>${money(item.sales)}</td>
+      <td class="col-cost">${item.cost > 0 ? money(PosCore.round2(item.cost / item.qty)) : `<span class="muted">Not set</span>`}</td>
       <td class="col-cost">${money(item.cost)}</td>
       <td class="col-cost ${item.profit < 0 ? "loss-text" : ""}">${item.profit < 0 ? "−" : ""}${money(Math.abs(item.profit))}</td>
     </tr>
-  `).join("") : `<tr><td colspan="9" class="report-empty">No sales recorded for this period.</td></tr>`;
+  `).join("") : `<tr><td colspan="10" class="report-empty">No sales recorded for this period.</td></tr>`;
 
   $("productSalesFoot").innerHTML = rows.length ? `
     <tr>
@@ -1355,6 +1363,7 @@ function renderProductTable(r) {
       <td></td>
       <td>${money(r.discountSales)}</td>
       <td>${money(r.grandTotal)}</td>
+      <td class="col-cost"></td>
       <td class="col-cost">${money(r.costTotal)}</td>
       <td class="col-cost">${signedMoney(r.profitTotal)}</td>
     </tr>` : "";
@@ -1522,7 +1531,7 @@ function exportCsv() {
     toast("No sales to export for this period.", "info");
     return;
   }
-  const blob = new Blob(["﻿" + salesToCsv(report.sales)], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["﻿" + salesToCsv(report.sales, currentCost)], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -1731,7 +1740,7 @@ $("bestBy").addEventListener("click", e => {
   if (!btn) return;
   report.bestBy = btn.dataset.by;
   document.querySelectorAll("#bestBy button").forEach(b => b.classList.toggle("active", b === btn));
-  renderBestSellers(aggregateSales(report.sales));
+  renderBestSellers(aggregateSales(report.sales, currentCost));
 });
 $("productTable").querySelector("thead").addEventListener("click", e => {
   const th = e.target.closest("th[data-sort]");
@@ -1739,7 +1748,7 @@ $("productTable").querySelector("thead").addEventListener("click", e => {
   const key = th.dataset.sort;
   report.sortDir = report.sortKey === key ? -report.sortDir : (key === "name" ? 1 : -1);
   report.sortKey = key;
-  renderProductTable(aggregateSales(report.sales));
+  renderProductTable(aggregateSales(report.sales, currentCost));
 });
 $("stockTable").querySelector("thead").addEventListener("click", e => {
   const th = e.target.closest("th[data-sort]");
@@ -1747,7 +1756,7 @@ $("stockTable").querySelector("thead").addEventListener("click", e => {
   const key = th.dataset.sort;
   report.stockSortDir = report.stockSortKey === key ? -report.stockSortDir : (key === "name" ? 1 : -1);
   report.stockSortKey = key;
-  renderStockReport(aggregateSales(report.sales));
+  renderStockReport(aggregateSales(report.sales, currentCost));
 });
 $("transactionList").addEventListener("click", e => {
   const v = e.target.closest("[data-void]");

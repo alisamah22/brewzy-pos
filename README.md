@@ -35,6 +35,9 @@ daily reports are shared across devices.
   Expo and main items, each report counts only its own items. Every sale during an Expo
   (25 Oct 2026 16:00 – 2 Nov 2026, set in `EXPOS` in `pos-core.js`) counts as Expo, whatever the items;
   sales earlier on 25 Oct were test runs and are shown as TEST but left out of every total. Expo items don't track stock or discards
+- **Cost prices added later count backwards:** a sale made before an item had a stock (cost) price uses
+  the item's current cost price in reports and the CSV, so entering cost prices later fixes past profit too.
+  The All products table shows each item's cost price, total cost and profit (also in the Expo report)
 - **Stock & discards report:** total stock quantity and its value at stock and selling price, the
   difference between them, discarded quantity in the period, the discard loss (stock price × quantity
   discarded), what that stock would have sold for, and profit after discards, with a per-item table

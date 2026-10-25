@@ -358,3 +358,20 @@ test("aggregateSales gives each product its discount price and quantity sold at 
   assert.equal(r.regularQty, 1);
   assert.equal(r.regularSales, 40);
 });
+
+test("cost prices added later fill in past sales that had none", () => {
+  const sales = [{ payment_method: "Cash", total: 95, items: [
+    { name: "Boava Wrap", price: 60, cost: 0, qty: 1 },   // sold before a cost price was set
+    { name: "Tuna Stick", price: 20, cost: 8, qty: 1 },   // cost saved at sale time is kept
+    { name: "Mystery", price: 15, qty: 1 },               // still has no cost price
+  ] }];
+  const costs = { "Boava Wrap": 35, "Tuna Stick": 12 };
+  const r = aggregateSales(sales, name => costs[name]);
+  assert.equal(r.costTotal, 43);
+  assert.equal(r.profitTotal, 52);
+  assert.equal(r.itemsMissingCost, 1);
+  assert.equal(r.productRows.find(p => p.name === "Boava Wrap").cost, 35);
+  assert.equal(aggregateSales(sales).costTotal, 8); // without the lookup, saved costs only
+  const csv = salesToCsv([{ id: "s", sale_date: "2026-10-25", payment_method: "Cash", items: [sales[0].items[0]] }], name => costs[name]);
+  assert.ok(csv.split("\r\n")[1].includes(",1,60.00,35.00,60.00,25.00,"));
+});

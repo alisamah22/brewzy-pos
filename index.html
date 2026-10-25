@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=11" />
+  <link rel="stylesheet" href="styles.css?v=12" />
 </head>
 <body>
   <div class="app">
@@ -285,7 +285,8 @@
               <th data-sort="discountPrice">Discount price</th>
               <th data-sort="discountSales">Discount price sales</th>
               <th data-sort="sales">Total sales</th>
-              <th data-sort="cost" class="col-cost">Cost</th>
+              <th data-sort="unitCost" class="col-cost">Cost price</th>
+              <th data-sort="cost" class="col-cost">Total cost</th>
               <th data-sort="profit" class="col-cost">Profit</th>
             </tr></thead>
             <tbody id="productSalesBody"></tbody>
@@ -347,9 +348,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=11"></script>
-<script src="supabase-api.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="pos-core.js?v=12"></script>
+<script src="supabase-api.js?v=12"></script>
+<script src="app.js?v=12"></script>
 
 </body>
 </html>

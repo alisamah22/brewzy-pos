@@ -732,9 +732,7 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .scope-switch button[data-scope="expo"].active { border-color: var(--expo); background: var(--expo-soft); color: var(--expo); }
 .report-modal.expo .report-card.highlight { background: var(--expo-soft); border-color: rgba(91,60,196,.35); }
 
-/* Expo items carry no stock price, so per-item cost and profit columns are hidden. */
-.report-modal.expo #productTable .col-cost,
-.report-modal.expo #bestBy [data-by="profit"] { display: none; }
+
 
 .bill-form {
   display: grid; grid-template-columns: 160px minmax(0, 1fr) 150px auto;

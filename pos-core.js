@@ -185,10 +185,19 @@
     return [round2(total), ...rounded];
   }
 
+  // Cost of one unit of a sold item: the cost saved with the sale, or, when
+  // none was saved (cost prices added later), the item's current cost price
+  // from "currentCost(name)". So cost prices entered later also fix past sales.
+  function itemCost(item, currentCost) {
+    const saved = Number(item.cost || 0);
+    if (saved > 0 || !currentCost) return saved;
+    return Number(currentCost(item.name) || 0);
+  }
+
   // Roll an array of sale rows up into report figures. Voided sales are
   // excluded from every total. Products are keyed by NAME so identical items
-  // merge into one row.
-  function aggregateSales(sales) {
+  // merge into one row. "currentCost" (optional) fills in missing cost prices.
+  function aggregateSales(sales, currentCost) {
     const paymentTotals = { Cash: 0, Card: 0, Transfer: 0 };
     const paymentCounts = { Cash: 0, Card: 0, Transfer: 0 };
     const products = new Map();
@@ -227,7 +236,7 @@
       for (const item of sale.items || []) {
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
-        const cost = Number(item.cost || 0);
+        const cost = itemCost(item, currentCost);
         // No buying price recorded (older sale, or item never given one).
         if (!(cost > 0)) itemsMissingCost += qty;
         itemCount += qty;
@@ -398,7 +407,7 @@
   }
 
   // One CSV line per item sold, for backups / spreadsheets.
-  function salesToCsv(sales) {
+  function salesToCsv(sales, currentCost) {
     const header = ["Date", "Time", "Sale ID", "Payment", "Item", "Category", "Qty",
       "Selling price", "Buying price", "Line total", "Line profit", "Voided",
       "Regular price", "Discount given"];
@@ -410,7 +419,7 @@
       for (const item of sale.items || []) {
         const qty = Number(item.qty || 0);
         const price = Number(item.price || 0);
-        const cost = Number(item.cost || 0);
+        const cost = itemCost(item, currentCost);
         const regular = Number(item.regular_price || 0);
         const discounted = regular > price;
         lines.push([
