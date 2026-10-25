@@ -109,6 +109,13 @@
     return t !== null && EXPOS.some((e) => sale.sale_date === e.startDate && t < Date.parse(e.start));
   }
 
+  // While "now" is before an Expo opens on its start day (test runs), the
+  // opening time as a Date; otherwise null.
+  function testModeUntil(now = new Date()) {
+    const e = EXPOS.find((x) => localDateKey(now) === x.startDate && now.getTime() < Date.parse(x.start));
+    return e ? new Date(Date.parse(e.start)) : null;
+  }
+
   // Sales narrowed to one report: "expo" keeps the Expo items of each sale
   // (all of them during an Expo), "main" keeps the rest. Totals are
   // recomputed from the kept items; a sale with nothing kept is dropped.
@@ -408,7 +415,7 @@
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale,
+    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil,
   };
 
   if (typeof module !== "undefined" && module.exports) {

@@ -27,6 +27,7 @@ const {
   sumExpenses,
   isExpoSale,
   isTestSale,
+  testModeUntil,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -324,4 +325,14 @@ test("Expo runs from 25 Oct 2026 16:00 to 2 Nov; earlier sales that day are test
   assert.equal(r.grandTotal, 10);
   assert.equal(r.testCount, 1);
   assert.equal(r.transactionCount, 1);
+});
+
+test("testModeUntil gives the Expo opening time only before 16:00 on 25 Oct 2026", () => {
+  // These run in the machine's time zone; Maldives tills are UTC+5.
+  const opening = Date.parse("2026-10-25T16:00:00+05:00");
+  const before = new Date(opening - 60 * 60 * 1000);
+  const after = new Date(opening + 60 * 1000);
+  if (before.getDate() === 25) assert.equal(testModeUntil(before).getTime(), opening);
+  assert.equal(testModeUntil(after), null);
+  assert.equal(testModeUntil(new Date(2026, 9, 26, 9, 0)), null);
 });

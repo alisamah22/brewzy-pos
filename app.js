@@ -6,7 +6,7 @@ const {
   quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
   discardError, stockSummary, aggregateDiscards,
   hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-  scopeSales, expenseError, sumExpenses,
+  scopeSales, expenseError, sumExpenses, isTestSale, testModeUntil,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
@@ -404,7 +404,7 @@ function updateChange() {
   if (saving) payBtn.textContent = "Saving…";
   else if (!cart.length) payBtn.textContent = "Add items to start";
   else if (!payable) payBtn.textContent = "Not enough cash";
-  else payBtn.textContent = `Charge ${money(total)} · ${paymentMethod}`;
+  else payBtn.textContent = `Charge ${money(total)} · ${paymentMethod}${testModeUntil() ? " · TEST" : ""}`;
 }
 
 function setPaymentMethod(method) {
@@ -503,6 +503,7 @@ function showReceipt(sale, received, uploaded) {
     ${saved > 0 ? `<div class="r-line r-saved"><span>🏷️ You saved</span><strong>${money(saved)}</strong></div>` : ""}
     <div class="r-line"><span>Paid by</span><span>${escapeHtml(sale.payment_method)}</span></div>
     ${cash}
+    ${isTestSale(sale) ? `<div class="notice warn">🧪 Test sale: made before the Expo opened, so it isn't counted in reports.</div>` : ""}
     ${uploaded ? "" : `<div class="notice warn">⏳ No internet. The sale is saved on this device and will upload automatically when the connection is back.</div>`}
   `;
   $("receiptDialog").showModal();
@@ -1521,6 +1522,28 @@ function tickClock() {
   $("clock").textContent = new Date().toLocaleString("en-GB", {
     weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
   });
+  updateTestBanner();
+}
+
+// Before the Expo opens, every sale is a test run: say so on the till.
+let wasTestMode = false;
+function updateTestBanner() {
+  const until = testModeUntil();
+  const banner = $("testBanner");
+  if (until) {
+    const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+    const left = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`;
+    const at = until.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    banner.innerHTML = `<strong>🧪 TEST MODE</strong> Sales before ${at} today are test sales and won't be counted in reports.` +
+      ` <span>The Expo opens at ${at} (in ${left}).</span>`;
+  } else if (wasTestMode) {
+    toast("🎪 The Expo is open! Sales now count.", "success", 8000);
+  }
+  banner.hidden = !until;
+  if (Boolean(until) !== wasTestMode) {
+    wasTestMode = Boolean(until);
+    updateChange(); // the pay button says when a sale is a test
+  }
 }
 
 $("searchInput").addEventListener("input", renderProducts);

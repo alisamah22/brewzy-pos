@@ -766,3 +766,13 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
   .bill-row { grid-template-columns: minmax(0, 1fr) auto; }
   .bill-row .bill-date { grid-column: 1 / -1; }
 }
+
+/* Shown on the till before the Expo opens */
+.test-banner {
+  padding: 10px 24px; font-size: 14px; color: #5a3b00;
+  background: repeating-linear-gradient(-45deg, #ffe7a3 0 14px, #ffdf8a 14px 28px);
+  border-bottom: 1px solid #f0c75e;
+}
+.test-banner strong { margin-right: 6px; letter-spacing: .3px; }
+.test-banner span { white-space: nowrap; }
+@media (max-width: 620px) { .test-banner { padding: 9px 16px; } }
