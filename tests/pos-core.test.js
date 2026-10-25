@@ -25,6 +25,7 @@ const {
   scopeSales,
   expenseError,
   sumExpenses,
+  isExpoDate,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -297,4 +298,17 @@ test("expenseError and sumExpenses", () => {
 
 test("dateRange all covers everything up to today", () => {
   assert.deepEqual(dateRange("all", new Date(2026, 9, 25)), { from: "2020-01-01", to: "2026-10-25" });
+});
+
+test("every sale on Expo days (25 Oct - 2 Nov 2026) counts as Expo", () => {
+  assert.equal(isExpoDate("2026-10-25"), true);
+  assert.equal(isExpoDate("2026-11-02"), true);
+  assert.equal(isExpoDate("2026-10-24"), false);
+  assert.equal(isExpoDate("2026-11-03"), false);
+  const sales = [
+    { id: "a", sale_date: "2026-10-28", total: 30, items: [{ name: "Tea", category: "Drinks", price: 10, qty: 3 }] },
+    { id: "b", sale_date: "2026-11-05", total: 10, items: [{ name: "Tea", category: "Drinks", price: 10, qty: 1 }] },
+  ];
+  assert.deepEqual(scopeSales(sales, "expo").map(s => s.id), ["a"]);
+  assert.deepEqual(scopeSales(sales, "main").map(s => s.id), ["b"]);
 });

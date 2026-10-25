@@ -84,14 +84,23 @@
     return String(product.category || "").trim().toLowerCase() !== "expo";
   }
 
-  // Sales narrowed to one report: "expo" keeps the Expo items of each sale,
-  // "main" keeps the rest. Totals are recomputed from the kept items; a sale
+  // Expo event days: every sale on these dates counts as Expo, whatever the
+  // items' category. Add a range here for each new Expo.
+  const EXPO_DATES = [{ from: "2026-10-25", to: "2026-11-02" }];
+
+  function isExpoDate(key) {
+    return EXPO_DATES.some((range) => key >= range.from && key <= range.to);
+  }
+
+  // Sales narrowed to one report: "expo" keeps the Expo items of each sale
+  // (all of them on Expo days), "main" keeps the rest. Totals are recomputed from the kept items; a sale
   // with nothing kept is dropped. "full_total" keeps the whole sale's total.
   function scopeSales(sales, scope) {
     const wantExpo = scope === "expo";
     const out = [];
     for (const sale of sales) {
-      const items = (sale.items || []).filter((item) => tracksStock(item) !== wantExpo);
+      const expoDay = isExpoDate(sale.sale_date || "");
+      const items = (sale.items || []).filter((item) => (expoDay || !tracksStock(item)) === wantExpo);
       if (!items.length) continue;
       const total = round2(items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 0), 0));
       out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0) });
@@ -375,7 +384,7 @@
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-    scopeSales, expenseError, sumExpenses,
+    scopeSales, expenseError, sumExpenses, isExpoDate,
   };
 
   if (typeof module !== "undefined" && module.exports) {

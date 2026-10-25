@@ -30,7 +30,8 @@ daily reports are shared across devices.
 - **Expo report:** Reports has a **🏪 Main sales / 🎪 Expo** switch. Items in the **Expo** category are
   reported on their own; add each Expo prep bill (date, what it was for, amount) in the Expo report and it
   shows **Expo profit = Expo sales − prep bills**. Use **All time** to see the whole event. If one sale mixes
-  Expo and main items, each report counts only its own items. Expo items don't track stock or discards
+  Expo and main items, each report counts only its own items. Every sale on the Expo days
+  (25 Oct – 2 Nov 2026, set in `EXPO_DATES` in `pos-core.js`) counts as Expo, whatever the items. Expo items don't track stock or discards
 - **Stock & discards report:** total stock quantity and its value at stock and selling price, the
   difference between them, discarded quantity in the period, the discard loss (stock price × quantity
   discarded), what that stock would have sold for, and profit after discards, with a per-item table
