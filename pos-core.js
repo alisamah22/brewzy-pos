@@ -84,26 +84,44 @@
     return String(product.category || "").trim().toLowerCase() !== "expo";
   }
 
-  // Expo event days: every sale on these dates counts as Expo, whatever the
-  // items' category. Add a range here for each new Expo.
-  const EXPO_DATES = [{ from: "2026-10-25", to: "2026-11-02" }];
+  // Expo events (Maldives time, UTC+5). From "start" to the end of "endDate"
+  // every sale counts as Expo, whatever the items' category. Sales earlier
+  // on the start day were test runs and are left out of every report total.
+  // Add an entry here for each new Expo.
+  const EXPOS = [
+    { startDate: "2026-10-25", start: "2026-10-25T16:00:00+05:00", endDate: "2026-11-02" },
+  ];
 
-  function isExpoDate(key) {
-    return EXPO_DATES.some((range) => key >= range.from && key <= range.to);
+  function saleTime(sale) {
+    const t = sale.created_at ? Date.parse(sale.created_at) : NaN;
+    return Number.isFinite(t) ? t : null;
+  }
+
+  function isExpoSale(sale) {
+    const key = sale.sale_date || "";
+    const t = saleTime(sale);
+    return EXPOS.some((e) => key >= e.startDate && key <= e.endDate &&
+      (t === null || t >= Date.parse(e.start)));
+  }
+
+  function isTestSale(sale) {
+    const t = saleTime(sale);
+    return t !== null && EXPOS.some((e) => sale.sale_date === e.startDate && t < Date.parse(e.start));
   }
 
   // Sales narrowed to one report: "expo" keeps the Expo items of each sale
-  // (all of them on Expo days), "main" keeps the rest. Totals are recomputed from the kept items; a sale
-  // with nothing kept is dropped. "full_total" keeps the whole sale's total.
+  // (all of them during an Expo), "main" keeps the rest. Totals are
+  // recomputed from the kept items; a sale with nothing kept is dropped.
+  // "full_total" keeps the whole sale's total; "test" marks a test run.
   function scopeSales(sales, scope) {
     const wantExpo = scope === "expo";
     const out = [];
     for (const sale of sales) {
-      const expoDay = isExpoDate(sale.sale_date || "");
-      const items = (sale.items || []).filter((item) => (expoDay || !tracksStock(item)) === wantExpo);
+      const expo = isExpoSale(sale);
+      const items = (sale.items || []).filter((item) => (expo || !tracksStock(item)) === wantExpo);
       if (!items.length) continue;
       const total = round2(items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 0), 0));
-      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0) });
+      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0), test: isTestSale(sale) });
     }
     return out;
   }
@@ -174,6 +192,7 @@
     let costTotal = 0;
     let transactionCount = 0;
     let voidedCount = 0;
+    let testCount = 0;
     let itemsMissingCost = 0;
     let discountTotal = 0;
     let discountedQty = 0;
@@ -181,6 +200,10 @@
     for (const sale of sales) {
       if (sale.voided) {
         voidedCount += 1;
+        continue;
+      }
+      if (sale.test) {
+        testCount += 1;
         continue;
       }
       transactionCount += 1;
@@ -234,6 +257,7 @@
       marginPercent: grandTotal > 0 ? ((grandTotal - costTotal) / grandTotal) * 100 : 0,
       transactionCount,
       voidedCount,
+      testCount,
       itemCount,
       itemsMissingCost,
       discountTotal: round2(discountTotal),
@@ -371,7 +395,7 @@
         lines.push([
           sale.sale_date, time, sale.id, sale.payment_method, item.name, item.category || "",
           qty, price.toFixed(2), cost.toFixed(2), (price * qty).toFixed(2),
-          ((price - cost) * qty).toFixed(2), sale.voided ? "yes" : "",
+          ((price - cost) * qty).toFixed(2), sale.voided ? "yes" : sale.test ? "test" : "",
           discounted ? regular.toFixed(2) : "", discounted ? ((regular - price) * qty).toFixed(2) : "",
         ].map(csvCell).join(","));
       }
@@ -384,7 +408,7 @@
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-    scopeSales, expenseError, sumExpenses, isExpoDate,
+    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale,
   };
 
   if (typeof module !== "undefined" && module.exports) {

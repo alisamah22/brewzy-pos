@@ -25,7 +25,8 @@ const {
   scopeSales,
   expenseError,
   sumExpenses,
-  isExpoDate,
+  isExpoSale,
+  isTestSale,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -300,15 +301,27 @@ test("dateRange all covers everything up to today", () => {
   assert.deepEqual(dateRange("all", new Date(2026, 9, 25)), { from: "2020-01-01", to: "2026-10-25" });
 });
 
-test("every sale on Expo days (25 Oct - 2 Nov 2026) counts as Expo", () => {
-  assert.equal(isExpoDate("2026-10-25"), true);
-  assert.equal(isExpoDate("2026-11-02"), true);
-  assert.equal(isExpoDate("2026-10-24"), false);
-  assert.equal(isExpoDate("2026-11-03"), false);
+test("Expo runs from 25 Oct 2026 16:00 to 2 Nov; earlier sales that day are test runs", () => {
+  const sale = (date, iso) => ({ sale_date: date, created_at: iso });
+  assert.equal(isExpoSale(sale("2026-10-25", "2026-10-25T11:30:00Z")), true); // 16:30 Maldives
+  assert.equal(isExpoSale(sale("2026-10-25", "2026-10-25T10:30:00Z")), false); // 15:30 Maldives
+  assert.equal(isTestSale(sale("2026-10-25", "2026-10-25T10:30:00Z")), true);
+  assert.equal(isTestSale(sale("2026-10-25", "2026-10-25T11:00:00Z")), false); // exactly 16:00
+  assert.equal(isExpoSale(sale("2026-11-02", "2026-11-02T15:00:00Z")), true);
+  assert.equal(isExpoSale(sale("2026-11-03", "2026-11-03T05:00:00Z")), false);
+  assert.equal(isTestSale(sale("2026-10-26", "2026-10-26T03:00:00Z")), false);
+
+  const tea = { name: "Tea", category: "Drinks", price: 10, qty: 1 };
   const sales = [
-    { id: "a", sale_date: "2026-10-28", total: 30, items: [{ name: "Tea", category: "Drinks", price: 10, qty: 3 }] },
-    { id: "b", sale_date: "2026-11-05", total: 10, items: [{ name: "Tea", category: "Drinks", price: 10, qty: 1 }] },
+    { id: "test", sale_date: "2026-10-25", created_at: "2026-10-25T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
+    { id: "expo", sale_date: "2026-10-28", created_at: "2026-10-28T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
+    { id: "main", sale_date: "2026-11-05", created_at: "2026-11-05T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
   ];
-  assert.deepEqual(scopeSales(sales, "expo").map(s => s.id), ["a"]);
-  assert.deepEqual(scopeSales(sales, "main").map(s => s.id), ["b"]);
+  assert.deepEqual(scopeSales(sales, "expo").map(s => s.id), ["expo"]);
+  const main = scopeSales(sales, "main");
+  assert.deepEqual(main.map(s => [s.id, s.test]), [["test", true], ["main", false]]);
+  const r = aggregateSales(main);
+  assert.equal(r.grandTotal, 10);
+  assert.equal(r.testCount, 1);
+  assert.equal(r.transactionCount, 1);
 });

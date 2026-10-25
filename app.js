@@ -1081,7 +1081,8 @@ function renderReport() {
     $("reportCostNote").textContent = "";
   }
   $("reportTransactions").textContent = r.transactionCount;
-  $("reportVoided").textContent = r.voidedCount ? `${r.voidedCount} voided` : "";
+  $("reportVoided").textContent = [r.voidedCount ? `${r.voidedCount} voided` : "",
+    r.testCount ? `${r.testCount} test` : ""].filter(Boolean).join(" · ");
   $("reportItems").textContent = r.itemCount;
   $("reportAverage").textContent = money(r.averageSale);
   document.querySelector(".report-card.profit").classList.toggle("negative", profit < 0);
@@ -1090,6 +1091,7 @@ function renderReport() {
   if (report.failed) notices.push(["error", "⚠️ Couldn't load sales from the database. Check the connection. Only sales saved on this device are shown."]);
   const waiting = report.sales.filter(s => s.pending).length;
   if (waiting) notices.push(["warn", `⏳ Includes ${plural(waiting, "sale")} saved on this device that haven't uploaded yet.`]);
+  if (r.testCount) notices.push(["info", `🧪 ${plural(r.testCount, "test sale")} made before the Expo opened (25 Oct, 16:00) ${r.testCount === 1 ? "is" : "are"} not counted.`]);
   if (!expo && r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
   const notice = $("reportNotice");
   notice.hidden = !notices.length;
@@ -1423,12 +1425,13 @@ function renderTransactions() {
     const summary = (sale.items || []).map(i => `${i.qty}× ${i.name}`).join(", ");
     let action = "";
     if (sale.pending) action = `<span class="chip-tag warn">⏳ Not uploaded</span>`;
+    else if (sale.test) action = `<span class="chip-tag muted">🧪 Test</span>`;
     else if (sale.voided) action = `<button type="button" class="small-btn" data-unvoid="${escapeHtml(sale.id)}">Restore</button>`;
     else action = `<button type="button" class="small-btn delete" data-void="${escapeHtml(sale.id)}">Void</button>`;
     return `
-    <div class="txn ${sale.voided ? "voided" : ""}">
+    <div class="txn ${sale.voided || sale.test ? "voided" : ""}">
       <div class="txn-time">${escapeHtml(date + time)}</div>
-      <div class="txn-items">${escapeHtml(summary)}${sale.voided ? ` <span class="chip-tag muted">VOID</span>` : ""}</div>
+      <div class="txn-items">${escapeHtml(summary)}${sale.voided ? ` <span class="chip-tag muted">VOID</span>` : ""}${sale.test ? ` <span class="chip-tag muted">TEST</span>` : ""}</div>
       <div class="txn-method">${escapeHtml(sale.payment_method)}</div>
       <strong class="txn-total">${money(sale.total)}${sale.full_total > sale.total
         ? `<small class="muted" title="The rest of this sale is in the other report"> of ${money(sale.full_total)}</small>` : ""}</strong>
