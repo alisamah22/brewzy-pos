@@ -1002,6 +1002,9 @@ function markScope() {
   $("reportTitle").textContent = expo ? "🎪 Expo Report" : "Sales Report";
   $("billsSection").hidden = !expo;
   $("stockSection").hidden = expo;
+  // Expo shows Item cost and Prep bills; Average sale makes room for them.
+  $("reportItemCostCard").hidden = !expo;
+  $("reportAverageCard").hidden = expo;
 }
 
 function applyScope() {
@@ -1086,13 +1089,17 @@ function renderReport() {
   const expo = report.scope === "expo";
   let profit = r.profitTotal;
   if (expo) {
-    // Expo profit = Expo sales − prep bills (Expo items carry no stock price).
+    // Expo profit = Expo sales − item cost (cost price × qty sold) − prep bills.
+    // Prep bills (ingredients, decor, other expenses) are separate from item cost prices.
     const billsTotal = sumExpenses(report.bills);
-    profit = PosCore.round2(r.grandTotal - billsTotal);
+    profit = PosCore.round2(r.grandTotal - r.costTotal - billsTotal);
     $("reportProfitLabel").textContent = "Expo profit";
     $("reportProfit").textContent = signedMoney(profit);
     $("reportMargin").textContent = r.grandTotal
-      ? `${((profit / r.grandTotal) * 100).toFixed(1)}% of sales · sales − bills` : "Sales − prep bills";
+      ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin · sales − item cost − bills` : "Sales − item cost − prep bills";
+    $("reportItemCost").textContent = money(r.costTotal);
+    $("reportItemCostNote").textContent = r.itemsMissingCost
+      ? `${plural(r.itemsMissingCost, "item")} sold without a cost price` : "Cost price × qty sold";
     $("reportCostLabel").textContent = "Prep bills";
     $("reportCost").textContent = money(billsTotal);
     $("reportCostNote").textContent = report.bills.length ? plural(report.bills.length, "bill") : "None added yet";
@@ -1119,7 +1126,7 @@ function renderReport() {
   const waiting = report.sales.filter(s => s.pending).length;
   if (waiting) notices.push(["warn", `⏳ Includes ${plural(waiting, "sale")} saved on this device that haven't uploaded yet.`]);
   if (r.testCount) notices.push(["info", `🧪 ${plural(r.testCount, "test sale")} made before the Expo opened (25 Oct, 16:00) ${r.testCount === 1 ? "is" : "are"} not counted.`]);
-  if (!expo && r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
+  if (r.itemsMissingCost) notices.push(["info", `ℹ️ ${plural(r.itemsMissingCost, "item")} sold had no stock price, so the profit shown is higher than the real profit. Add stock prices in Manage Items.`]);
   const notice = $("reportNotice");
   notice.hidden = !notices.length;
   notice.innerHTML = notices.map(([cls, text]) => `<div class="notice ${cls}">${escapeHtml(text)}</div>`).join("");

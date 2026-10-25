@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=13" />
 </head>
 <body>
   <div class="app">
@@ -239,10 +239,11 @@
       <div class="report-cards">
         <div class="report-card highlight"><span>Total sales</span><strong id="reportTotal">MVR 0.00</strong><small id="reportDiscount"></small></div>
         <div class="report-card profit"><span id="reportProfitLabel">Profit</span><strong id="reportProfit">MVR 0.00</strong><small id="reportMargin"></small></div>
+        <div class="report-card" id="reportItemCostCard" hidden><span>Item cost</span><strong id="reportItemCost">MVR 0.00</strong><small id="reportItemCostNote"></small></div>
         <div class="report-card" id="reportCostCard"><span id="reportCostLabel">Stock cost</span><strong id="reportCost">MVR 0.00</strong><small id="reportCostNote"></small></div>
         <div class="report-card"><span>Transactions</span><strong id="reportTransactions">0</strong><small id="reportVoided"></small></div>
         <div class="report-card"><span>Items sold</span><strong id="reportItems">0</strong></div>
-        <div class="report-card"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
+        <div class="report-card" id="reportAverageCard"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
       </div>
 
       <div class="report-grid">
@@ -348,9 +349,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=12"></script>
-<script src="supabase-api.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="pos-core.js?v=13"></script>
+<script src="supabase-api.js?v=13"></script>
+<script src="app.js?v=13"></script>
 
 </body>
 </html>
