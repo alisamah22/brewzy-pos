@@ -1156,7 +1156,8 @@ async function loadReport() {
   });
   // Bills load separately too, so the report works before their migration.
   let billsFailed = false;
-  const billsRequest = PosApi.fetchExpensesInRange(from, to, "Expo").catch(err => {
+  // Every Expo prep bill, whatever dates are picked: they cover the whole event.
+  const billsRequest = PosApi.fetchExpensesInRange("2000-01-01", "2999-12-31", "Expo").catch(err => {
     console.error("Failed to load bills:", err);
     billsFailed = describeError(err);
     return [];
@@ -1518,9 +1519,7 @@ function renderBills() {
 
 // New bills default to today, or the last day of the report when it ends earlier.
 function defaultBillDate() {
-  const today = localDateKey();
-  const { to } = reportRange();
-  return to < today ? to : today;
+  return localDateKey();
 }
 
 function resetBillForm() {
@@ -1570,10 +1569,7 @@ async function saveBill() {
     return;
   }
   btn.disabled = false;
-  const { from, to } = reportRange();
-  const outside = fields.date < from || fields.date > to;
-  toast(`${editingId ? "Bill updated" : `Added ${money(row.amount)} bill`} ✓${outside ? " (dated outside these dates, so not shown)" : ""}`,
-    "success", outside ? 6000 : 3500);
+  toast(`${editingId ? "Bill updated" : `Added ${money(row.amount)} bill`} ✓`, "success");
   resetBillForm();
   await loadReport();
 }

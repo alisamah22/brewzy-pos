@@ -35,7 +35,7 @@ daily reports are shared across devices.
 - **Expo report:** Reports has a **🏪 Main sales / 🎪 Expo** switch. Items in the **Expo** category are
   reported on their own; add each Expo prep bill (date, what it was for, amount) in the Expo report and it
   shows **Expo profit = Expo sales − item cost (cost price × qty sold) − prep bills** (prep bills are
-  ingredients, decor and other expenses, separate from item cost prices). Use **All time** to see the whole event. If one sale mixes
+  ingredients, decor and other expenses, separate from item cost prices). The prep bills list always shows every Expo bill, whatever dates are picked. If one sale mixes
   Expo and main items, each report counts only its own items. Every sale during an Expo
   (25 Oct 2026 16:00 – 2 Nov 2026, set in `EXPOS` in `pos-core.js`) counts as Expo, whatever the items;
   sales earlier on 25 Oct were test runs: they count in reports until 16:00 (so the reports can be tried
