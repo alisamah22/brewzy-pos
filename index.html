@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=15" />
+  <link rel="stylesheet" href="styles.css?v=16" />
 </head>
 <body>
   <div class="app">
@@ -43,11 +43,13 @@
       <aside class="cart-panel" id="cartPanel" aria-label="Current order">
         <div class="cart-heading">
           <div>
-            <h2>Current Order</h2>
+            <h2 id="orderTitle">Current Order</h2>
             <span id="itemCount">0 items</span>
           </div>
           <button class="danger-text" id="clearCartBtn">Clear all</button>
         </div>
+
+        <div class="order-tabs" id="orderTabs" role="tablist" aria-label="Open orders"></div>
 
         <div id="cartItems" class="cart-items"></div>
 
@@ -349,9 +351,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=15"></script>
-<script src="supabase-api.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="pos-core.js?v=16"></script>
+<script src="supabase-api.js?v=16"></script>
+<script src="app.js?v=16"></script>
 
 </body>
 </html>

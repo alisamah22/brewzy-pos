@@ -18,6 +18,9 @@ daily reports are shared across devices.
   **discount price** and **quantity sold at discount**. Clear the price (**Remove discount**) and save to end it
 - **Discarded stock:** record how many of an item were thrown away and on which date; each record
   can be edited or deleted later (Manage Items → **Discard**, or **Edit** on an item)
+- **Several open orders:** tap **＋ New order** to keep the current order and start another; tap an order's
+  tab (#1, #2…) to switch between them before payment. Each keeps its own items, payment method and cash.
+  Paying or cancelling one leaves the others open; open orders are saved on the till through a reload
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
   that show the change to give, or how much cash is short
 - Cash / Transfer / Card payment, itemised receipt with a Print button

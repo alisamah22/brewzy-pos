@@ -12,6 +12,7 @@ const {
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
 const PENDING_SALES_KEY = "brewzyPendingSales";
 const REPORT_SCOPE_KEY = "brewzyReportScope";
+const OPEN_ORDERS_KEY = "brewzyOpenOrders";
 const EMOJI_PICKS = ["🍔", "🌭", "🥪", "🍕", "🍟", "🥐", "🍩", "🍪", "🍫", "🍰", "🧁", "🍨",
   "☕", "🧋", "🥤", "🧃", "🍵", "🥗", "🍛", "🐟"];
 
@@ -38,7 +39,7 @@ function writeStore(key, value) {
 let products = readStore(PRODUCTS_CACHE_KEY, []);
 let pendingSales = readStore(PENDING_SALES_KEY, []); // sales not yet uploaded
 let menuLoaded = products.length > 0;
-let cart = [];
+let cart = []; // lines of the order on screen (the active open order)
 let activeCategory = "All";
 let paymentMethod = "Cash";
 let online = null; // null = not checked yet
@@ -251,13 +252,17 @@ async function loadProducts() {
     }
   }
   menuLoaded = true;
-  // Keep cart lines in step with any menu edits; drop deleted items.
-  const lines = cart;
-  cart = [];
-  for (const item of lines) {
-    const p = products.find(x => x.id === item.id);
-    if (p) putInCart(p, item.qty, item.discounted);
+  // Keep every open order's lines in step with menu edits; drop deleted items.
+  for (const order of orders) {
+    const lines = order.id === activeOrderId ? cart : order.cart;
+    cart = [];
+    for (const item of lines) {
+      const p = products.find(x => x.id === item.id);
+      if (p) putInCart(p, item.qty, item.discounted);
+    }
+    order.cart = cart;
   }
+  cart = activeOrder().cart;
   renderAll();
 }
 
@@ -349,11 +354,115 @@ function clearCart() {
   renderProducts();
 }
 
+// ---------- Open (held) orders ----------
+// Several orders can be open at once; one is on screen. Each keeps its own
+// lines, payment method and cash typed. They're saved on this till so a
+// reload doesn't lose them.
+
+let orders = [];
+let activeOrderId = "";
+
+function blankOrder(no) {
+  return { id: newId(), no, cart: [], paymentMethod: "Cash", cash: "" };
+}
+
+function activeOrder() {
+  return orders.find(o => o.id === activeOrderId);
+}
+
+function nextOrderNo() {
+  return orders.length ? Math.max(...orders.map(o => o.no)) + 1 : 1;
+}
+
+function restoreOrders() {
+  const saved = readStore(OPEN_ORDERS_KEY, null);
+  const list = saved && Array.isArray(saved.orders) ? saved.orders.filter(o => o && o.id && Array.isArray(o.cart)) : [];
+  orders = list.length ? list : [blankOrder(1)];
+  activeOrderId = orders.some(o => o.id === saved?.active) ? saved.active : orders[0].id;
+}
+
+// Copy what's on screen into the active order and save all open orders.
+function saveOrders() {
+  const order = activeOrder();
+  if (order) {
+    order.cart = cart;
+    order.paymentMethod = paymentMethod;
+    order.cash = $("cashReceived").value;
+  }
+  writeStore(OPEN_ORDERS_KEY, { orders, active: activeOrderId });
+}
+
+function showActiveOrder() {
+  const order = activeOrder();
+  cart = order.cart;
+  $("cashReceived").value = order.cash || "";
+  setPaymentMethod(order.paymentMethod || "Cash");
+  renderCart();
+  renderProducts();
+}
+
+function switchOrder(id) {
+  if (saving || id === activeOrderId || !orders.some(o => o.id === id)) return;
+  saveOrders();
+  // An empty order is dropped when you leave it.
+  const leaving = activeOrder();
+  if (leaving && !leaving.cart.length) orders = orders.filter(o => o !== leaving);
+  activeOrderId = id;
+  showActiveOrder();
+}
+
+function newOrder() {
+  if (saving) return;
+  saveOrders();
+  const current = activeOrder();
+  if (!current.cart.length) {
+    toast("This order is empty: add items to it, or switch to another order.", "info");
+    return;
+  }
+  const order = blankOrder(nextOrderNo());
+  orders.push(order);
+  activeOrderId = order.id;
+  showActiveOrder();
+  toast(`Order #${current.no} kept. Started order #${order.no}.`, "success");
+}
+
+// The active order is paid or cancelled: remove it and show an empty order
+// (reusing one that's already open), keeping the other held orders.
+function closeActiveOrder() {
+  orders = orders.filter(o => o.id !== activeOrderId);
+  const empty = orders.find(o => !o.cart.length);
+  const next = empty || blankOrder(nextOrderNo());
+  if (!empty) orders.push(next);
+  activeOrderId = next.id;
+  showActiveOrder();
+}
+
+function renderOrderTabs() {
+  const tabs = orders.map(o => {
+    const lines = o.id === activeOrderId ? cart : o.cart;
+    const count = lines.reduce((sum, i) => sum + i.qty, 0);
+    const active = o.id === activeOrderId;
+    return `
+    <button type="button" class="order-tab ${active ? "active" : ""}" role="tab" aria-selected="${active}" data-order="${escapeHtml(o.id)}">
+      <strong>#${o.no}</strong>
+      <span>${count ? `${plural(count, "item")} · ${money(calcTotals(lines).total)}` : "Empty"}</span>
+    </button>`;
+  }).join("");
+  $("orderTabs").innerHTML = tabs +
+    `<button type="button" class="order-tab new" id="newOrderTabBtn" title="Keep this order and start another">＋ New order</button>`;
+  const order = activeOrder();
+  $("orderTitle").textContent = orders.length > 1 ? `Order #${order.no}` : "Current Order";
+}
+
 function renderCart() {
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
   const t = calcTotals(cart);
-  $("itemCount").textContent = plural(count, "item");
+  $("itemCount").textContent = plural(count, "item") +
+    (orders.length > 1 ? ` · ${plural(orders.length - 1, "other order")} open` : "");
   $("clearCartBtn").hidden = !cart.length;
+  $("clearCartBtn").textContent = orders.length > 1 ? "Cancel order" : "Clear all";
+  renderOrderTabs();
+  saveOrders();
 
   $("cartItems").innerHTML = cart.length ? cart.map(item => `
     <div class="cart-row">
@@ -381,7 +490,7 @@ function renderCart() {
     </div>`;
 
   $("total").textContent = money(t.total);
-  $("mobileCartCount").textContent = plural(count, "item");
+  $("mobileCartCount").textContent = plural(count, "item") + (orders.length > 1 ? ` · #${activeOrder().no}` : "");
   $("mobileCartTotal").textContent = money(t.total);
   updateMobileBar();
   renderQuickCash();
@@ -442,6 +551,7 @@ function setPaymentMethod(method) {
   });
   $("cashSection").hidden = method !== "Cash";
   updateChange();
+  if (activeOrder()) saveOrders();
 }
 
 function updateMobileBar() {
@@ -505,7 +615,7 @@ async function processPayment() {
   saving = false;
 
   showReceipt(sale, received, uploaded);
-  clearCart();
+  closeActiveOrder();
 }
 
 function showReceipt(sale, received, uploaded) {
@@ -1654,7 +1764,16 @@ $("cartItems").addEventListener("click", e => {
 });
 
 $("clearCartBtn").addEventListener("click", () => {
-  if (cart.length && confirm("Clear the current order?")) clearCart();
+  if (!cart.length) return;
+  if (orders.length > 1) {
+    if (confirm(`Cancel order #${activeOrder().no}? Its items will be removed.`)) closeActiveOrder();
+  } else if (confirm("Clear the current order?")) clearCart();
+});
+
+$("orderTabs").addEventListener("click", e => {
+  if (e.target.closest("#newOrderTabBtn")) return newOrder();
+  const tab = e.target.closest("[data-order]");
+  if (tab) switchOrder(tab.dataset.order);
 });
 
 document.querySelectorAll(".payment").forEach(btn => {
@@ -1667,7 +1786,10 @@ $("quickCash").addEventListener("click", e => {
   $("cashReceived").value = chip.dataset.cash;
   updateChange();
 });
-$("cashReceived").addEventListener("input", updateChange);
+$("cashReceived").addEventListener("input", () => {
+  updateChange();
+  saveOrders();
+});
 $("cashReceived").addEventListener("keydown", e => {
   if (e.key === "Enter") processPayment();
 });
@@ -1814,7 +1936,10 @@ renderEmojiPicks();
 tickClock();
 setInterval(tickClock, 15000);
 setInterval(checkConnection, 30000);
-setPaymentMethod("Cash");
+restoreOrders();
+cart = activeOrder().cart;
+$("cashReceived").value = activeOrder().cash || "";
+setPaymentMethod(activeOrder().paymentMethod || "Cash");
 renderStatus();
 renderAll();                          // instant paint from cached menu (if any)
 loadProducts().then(flushPending);    // refresh the shared menu, upload saved sales

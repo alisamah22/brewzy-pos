@@ -791,3 +791,16 @@ dialog::backdrop { background: rgba(13, 23, 33, .55); }
 .split-box.disc { background: var(--sale-soft); border-color: transparent; }
 .split-box.disc strong, .split-box.disc small, .split-box.disc span { color: var(--sale); }
 #productTable tfoot td { font-weight: 800; border-top: 2px solid var(--line); }
+
+/* Open (held) orders */
+.order-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 2px; }
+.order-tab {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-height: 44px; padding: 6px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: white; color: var(--text); font-size: 12px; text-align: left;
+}
+.order-tab strong { font-size: 14px; }
+.order-tab span { color: var(--muted); white-space: nowrap; }
+.order-tab.active { border: 2px solid var(--primary); background: var(--primary-soft); }
+.order-tab.active span { color: var(--primary-dark); }
+.order-tab.new { justify-content: center; font-weight: 800; font-size: 13px; color: var(--primary-dark); border-style: dashed; }
