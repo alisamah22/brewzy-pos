@@ -36,10 +36,11 @@ daily reports are shared across devices.
   reported on their own; add each Expo prep bill (date, what it was for, amount) in the Expo report and it
   shows **Expo profit = Expo sales − item cost (cost price × qty sold) − prep bills** (prep bills are
   ingredients, decor and other expenses, separate from item cost prices). Use **All time** to see the whole event. If one sale mixes
-  Expo and main items, each report counts only its own items. Every sale during an Expo
-  (25 Oct 2026 16:00 – 2 Nov 2026, set in `EXPOS` in `pos-core.js`) counts as Expo, whatever the items;
-  sales earlier on 25 Oct were test runs: they count in reports until 16:00 (so the reports can be tried
-  out), then they're shown as TEST but left out of every total. Expo items don't track stock or discards
+  Expo and main items, each report counts only its own items. Each Expo night
+  (25 Oct – 2 Nov 2026, set in `EXPOS` in `pos-core.js`) runs 16:00 – 01:00 and counts as one day (the
+  evening's date, so a sale at 00:30 on 26 Oct is in 25 Oct's report). Sales in that window count as Expo,
+  whatever the items. Other sales on Expo days (01:00 – 16:00) are test sales: not counted in any report or
+  profit (listed as TEST), and the till shows a TEST MODE banner while the Expo is closed. Expo items don't track stock or discards
 - **Cost prices added later count backwards:** a sale made before an item had a stock (cost) price uses
   the item's current cost price in reports and the CSV, so entering cost prices later fixes past profit too.
   The All products table shows each item's cost price, total cost and profit (also in the Expo report)
