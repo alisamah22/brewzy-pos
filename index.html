@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=19" />
+  <link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
   <div class="app">
@@ -303,7 +303,7 @@
         <div class="bill-form" id="billForm">
           <input type="hidden" id="billEditingId" />
           <label>Date <input id="billDate" type="date" /></label>
-          <label class="bill-desc">What was it for? <input id="billDesc" placeholder="e.g. Chicken and bread" autocomplete="off" /></label>
+          <label class="bill-desc">What was it for? <span class="muted">(optional)</span> <input id="billDesc" placeholder="e.g. Chicken and bread" autocomplete="off" /></label>
           <label>Amount (MVR) <input id="billAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" /></label>
           <div class="bill-actions">
             <button type="button" class="secondary" id="cancelBillBtn" hidden>Cancel</button>
@@ -351,9 +351,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=19"></script>
-<script src="supabase-api.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="pos-core.js?v=20"></script>
+<script src="supabase-api.js?v=20"></script>
+<script src="app.js?v=20"></script>
 
 </body>
 </html>

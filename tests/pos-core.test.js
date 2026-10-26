@@ -293,7 +293,7 @@ test("scopeSales splits sales into Expo and main items", () => {
 test("expenseError and sumExpenses", () => {
   assert.equal(expenseError({ date: "2026-10-25", description: "Flour", amount: "120" }), null);
   assert.equal(typeof expenseError({ date: "", description: "Flour", amount: "120" }), "string");
-  assert.equal(typeof expenseError({ date: "2026-10-25", description: " ", amount: "120" }), "string");
+  assert.equal(expenseError({ date: "2026-10-25", description: "", amount: "120" }), null); // "what for" is optional
   assert.equal(typeof expenseError({ date: "2026-10-25", description: "Flour", amount: "0" }), "string");
   assert.equal(sumExpenses([{ amount: 120.5 }, { amount: "79.5" }]), 200);
 });

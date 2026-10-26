@@ -140,7 +140,6 @@
 
   function expenseError(fields) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date || "")) return "Please pick the date of the bill.";
-    if (!(fields.description || "").trim()) return "Please say what the bill was for.";
     const amount = Number(fields.amount);
     if (fields.amount === "" || !Number.isFinite(amount) || amount <= 0) return "Please enter the bill amount.";
     return null;

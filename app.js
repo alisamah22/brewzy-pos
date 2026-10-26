@@ -1506,7 +1506,7 @@ function renderBills() {
     bills.map(b => `
     <div class="bill-row ${b.id === editingId ? "editing" : ""}">
       <span class="bill-date">${escapeHtml(formatDay(b.expense_date, { weekday: "short", day: "numeric", month: "short" }))}</span>
-      <span class="bill-what">${escapeHtml(b.description)}</span>
+      <span class="bill-what">${b.description ? escapeHtml(b.description) : `<span class="muted">—</span>`}</span>
       <strong>${money(b.amount)}</strong>
       <span class="manage-actions">
         <button type="button" class="small-btn" data-bill-edit="${escapeHtml(b.id)}">Edit</button>
@@ -1580,7 +1580,7 @@ async function saveBill() {
 
 async function deleteBill(id) {
   const bill = report.bills.find(b => b.id === id);
-  if (!bill || !confirm(`Delete the ${money(bill.amount)} bill for "${bill.description}"?`)) return;
+  if (!bill || !confirm(`Delete the ${money(bill.amount)} bill${bill.description ? ` for "${bill.description}"` : ` of ${formatDay(bill.expense_date)}`}?`)) return;
   try {
     await PosApi.deleteExpense(id);
   } catch (err) {
