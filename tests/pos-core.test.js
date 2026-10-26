@@ -28,7 +28,6 @@ const {
   isExpoSale,
   isTestSale,
   testModeUntil,
-  reportDate,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -303,6 +302,42 @@ test("dateRange all covers everything up to today", () => {
   assert.deepEqual(dateRange("all", new Date(2026, 9, 25)), { from: "2020-01-01", to: "2026-10-25" });
 });
 
+test("Expo runs from 25 Oct 2026 16:00 to 2 Nov; earlier sales that day are test runs", () => {
+  const sale = (date, iso) => ({ sale_date: date, created_at: iso });
+  assert.equal(isExpoSale(sale("2026-10-25", "2026-10-25T11:30:00Z")), true); // 16:30 Maldives
+  assert.equal(isExpoSale(sale("2026-10-25", "2026-10-25T10:30:00Z")), false); // 15:30 Maldives
+  assert.equal(isTestSale(sale("2026-10-25", "2026-10-25T10:30:00Z")), true);
+  assert.equal(isTestSale(sale("2026-10-25", "2026-10-25T11:00:00Z")), false); // exactly 16:00
+  assert.equal(isExpoSale(sale("2026-11-02", "2026-11-02T15:00:00Z")), true);
+  assert.equal(isExpoSale(sale("2026-11-03", "2026-11-03T05:00:00Z")), false);
+  assert.equal(isTestSale(sale("2026-10-26", "2026-10-26T03:00:00Z")), false);
+
+  const tea = { name: "Tea", category: "Drinks", price: 10, qty: 1 };
+  const sales = [
+    { id: "test", sale_date: "2026-10-25", created_at: "2026-10-25T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
+    { id: "expo", sale_date: "2026-10-28", created_at: "2026-10-28T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
+    { id: "main", sale_date: "2026-11-05", created_at: "2026-11-05T09:00:00Z", payment_method: "Cash", total: 10, items: [tea] },
+  ];
+  const afterOpening = new Date(Date.parse("2026-10-26T09:00:00+05:00"));
+  assert.deepEqual(scopeSales(sales, "expo", afterOpening).map(s => s.id), ["expo"]);
+  const main = scopeSales(sales, "main", afterOpening);
+  assert.deepEqual(main.map(s => [s.id, s.test]), [["test", true], ["main", false]]);
+  const r = aggregateSales(main);
+  assert.equal(r.grandTotal, 10);
+  assert.equal(r.testCount, 1);
+  assert.equal(r.transactionCount, 1);
+});
+
+test("testModeUntil gives the Expo opening time only before 16:00 on 25 Oct 2026", () => {
+  // These run in the machine's time zone; Maldives tills are UTC+5.
+  const opening = Date.parse("2026-10-25T16:00:00+05:00");
+  const before = new Date(opening - 60 * 60 * 1000);
+  const after = new Date(opening + 60 * 1000);
+  if (before.getDate() === 25) assert.equal(testModeUntil(before).getTime(), opening);
+  assert.equal(testModeUntil(after), null);
+  assert.equal(testModeUntil(new Date(2026, 9, 26, 9, 0)), null);
+});
+
 test("aggregateSales gives each product its discount price and quantity sold at discount", () => {
   const r = aggregateSales([
     { payment_method: "Cash", total: 70, items: [
@@ -342,62 +377,20 @@ test("cost prices added later fill in past sales that had none", () => {
   assert.ok(csv.split("\r\n")[1].includes(",1,60.00,35.00,60.00,25.00,"));
 });
 
-function PosLocalDate(d) {
-  return localDateKey(d);
-}
-
-test("each Expo night runs 16:00 to 01:00 and counts as the evening's day; other times are test sales", () => {
-  const sale = (date, iso) => ({ sale_date: date, created_at: iso });
-  // Maldives = UTC+5: 11:00Z = 16:00, 19:00Z = 00:00, 20:00Z = 01:00
-  for (const day of ["2026-10-25", "2026-10-28", "2026-11-02"]) {
-    assert.equal(isExpoSale(sale(day, `${day}T11:00:00Z`)), true, `${day} 16:00`);
-    assert.equal(isExpoSale(sale(day, `${day}T18:30:00Z`)), true, `${day} 23:30`);
-    assert.equal(isTestSale(sale(day, `${day}T10:59:00Z`)), true, `${day} 15:59`);
+test("before the Expo opens, test sales count; from 16:00 they are cleared", () => {
+  const sale = { id: "t", sale_date: "2026-10-25", created_at: "2026-10-25T07:00:00Z", payment_method: "Cash",
+    total: 60, items: [{ name: "Boava Wrap", category: "Expo", price: 60, qty: 1 }] };
+  const opening = Date.parse("2026-10-25T16:00:00+05:00");
+  const during = new Date(opening - 30 * 60 * 1000);
+  const after = new Date(opening + 60 * 1000);
+  if (during.getDate() === 25) { // test mode is keyed to the till's local date
+    const live = scopeSales([sale], "expo", during);
+    assert.equal(live[0].testRun, true);
+    assert.equal(live[0].test, false);
+    assert.equal(aggregateSales(live).grandTotal, 60);
   }
-  // after midnight, before 01:00: belongs to the night before
-  const late = sale("2026-10-26", "2026-10-25T19:10:00Z"); // 26 Oct 00:10
-  assert.equal(isExpoSale(late), true);
-  assert.equal(isTestSale(late), false);
-  assert.equal(reportDate(late), "2026-10-25");
-  const lateLast = sale("2026-11-03", "2026-11-02T19:30:00Z"); // 3 Nov 00:30, after the last night
-  assert.equal(isExpoSale(lateLast), true);
-  assert.equal(reportDate(lateLast), "2026-11-02");
-  // from 01:00 on an Expo day: test sale, stays on its own date
-  const after = sale("2026-10-26", "2026-10-25T21:03:00Z"); // 26 Oct 02:03
-  assert.equal(isExpoSale(after), false);
-  assert.equal(isTestSale(after), true);
-  assert.equal(reportDate(after), "2026-10-26");
-  // before the Expo / after it: ordinary sales
-  assert.equal(isTestSale(sale("2026-10-25", "2026-10-24T19:30:00Z")), true); // 25 Oct 00:30, no night before
-  assert.equal(isTestSale(sale("2026-11-03", "2026-11-02T21:00:00Z")), false); // 3 Nov 02:00
-  assert.equal(isExpoSale(sale("2026-11-03", "2026-11-03T12:00:00Z")), false);
-  assert.equal(reportDate(sale("2026-11-05", "2026-11-05T05:00:00Z")), "2026-11-05");
-
-  const tea = { name: "Tea", category: "Drinks", price: 10, qty: 1 };
-  const wrap = { name: "Boava Wrap", category: "Expo", price: 60, qty: 1 };
-  const sales = [
-    { id: "morning", sale_date: "2026-10-27", created_at: "2026-10-27T05:00:00Z", payment_method: "Cash", total: 70, items: [tea, wrap] },
-    { id: "evening", sale_date: "2026-10-27", created_at: "2026-10-27T13:00:00Z", payment_method: "Cash", total: 70, items: [tea, wrap] },
-    { id: "after", sale_date: "2026-11-05", created_at: "2026-11-05T05:00:00Z", payment_method: "Cash", total: 70, items: [tea, wrap] },
-  ];
-  const expo = aggregateSales(scopeSales(sales, "expo"));
-  assert.equal(expo.grandTotal, 70 + 60);
-  assert.equal(expo.testCount, 1);
-  const main = aggregateSales(scopeSales(sales, "main"));
-  assert.equal(main.grandTotal, 10);
-});
-
-test("testModeUntil: TEST MODE from 01:00 to 16:00 on Expo days only", () => {
-  const at = iso => new Date(iso);
-  const check = (iso, expected) => {
-    const d = at(iso);
-    if (localDateKey(d) !== iso.slice(0, 10)) return; // keyed to the till's local date (UTC+5 tills)
-    const r = testModeUntil(d);
-    assert.equal(r && r.getTime(), expected && Date.parse(expected), iso);
-  };
-  check("2026-10-26T00:30:00+05:00", null);                         // last night's Expo still open
-  check("2026-10-26T01:30:00+05:00", "2026-10-26T16:00:00+05:00");  // closed: test mode until 16:00
-  check("2026-10-26T15:00:00+05:00", "2026-10-26T16:00:00+05:00");
-  check("2026-10-26T16:30:00+05:00", null);                         // open
-  check("2026-11-03T10:00:00+05:00", null);                         // after the Expo
+  const later = scopeSales([sale], "expo", after);
+  assert.equal(later[0].test, true);
+  assert.equal(aggregateSales(later).grandTotal, 0);
+  assert.equal(aggregateSales(later).testCount, 1);
 });

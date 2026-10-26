@@ -84,81 +84,47 @@
     return String(product.category || "").trim().toLowerCase() !== "expo";
   }
 
-  // Expo events (Maldives time, UTC+5). Each night from startDate to endDate
-  // the Expo opens at "opensAt" and closes at "closesAt" the next morning;
-  // the whole night counts as one day (the evening's date). Sales in that
-  // window count as Expo, whatever the items' category. Other sales on an
-  // Expo day (after closing, before opening) are test sales: left out of
-  // every report and profit figure. Add an entry here for each new Expo.
+  // Expo events (Maldives time, UTC+5). From "start" to the end of "endDate"
+  // every sale counts as Expo, whatever the items' category. Sales earlier
+  // on the start day were test runs and are left out of every report total.
+  // Add an entry here for each new Expo.
   const EXPOS = [
-    { startDate: "2026-10-25", endDate: "2026-11-02", opensAt: "16:00", closesAt: "01:00" },
+    { startDate: "2026-10-25", start: "2026-10-25T16:00:00+05:00", endDate: "2026-11-02" },
   ];
-
-  function expoFor(key) {
-    return EXPOS.find((e) => key >= e.startDate && key <= e.endDate) || null;
-  }
-
-  // Opening and closing of the Expo night that starts on "key", as timestamps.
-  function nightWindow(expo, key) {
-    return {
-      opens: Date.parse(`${key}T${expo.opensAt}:00+05:00`),
-      closes: Date.parse(`${addDays(key, 1)}T${expo.closesAt}:00+05:00`),
-    };
-  }
 
   function saleTime(sale) {
     const t = sale.created_at ? Date.parse(sale.created_at) : NaN;
     return Number.isFinite(t) ? t : null;
   }
 
-  // The date of the Expo night a sale belongs to (a sale at 00:30 on 26 Oct
-  // belongs to the night of 25 Oct), or null when it wasn't sold during one.
-  function expoNightOf(sale) {
+  function isExpoSale(sale) {
     const key = sale.sale_date || "";
     const t = saleTime(sale);
-    if (t === null) return null;
-    for (const day of [key, addDays(key, -1)]) {
-      const expo = expoFor(day);
-      if (!expo) continue;
-      const w = nightWindow(expo, day);
-      if (t >= w.opens && t < w.closes) return day;
-    }
-    return null;
+    return EXPOS.some((e) => key >= e.startDate && key <= e.endDate &&
+      (t === null || t >= Date.parse(e.start)));
   }
 
-  // The day a sale is reported under: its Expo night's date, else its own date.
-  function reportDate(sale) {
-    return expoNightOf(sale) || sale.sale_date;
-  }
-
-  function isExpoSale(sale) {
-    if (saleTime(sale) === null) return Boolean(expoFor(sale.sale_date || ""));
-    return Boolean(expoNightOf(sale));
-  }
-
-  // Sold on an Expo day outside the Expo's opening hours: a test sale.
   function isTestSale(sale) {
-    return saleTime(sale) !== null && Boolean(expoFor(sale.sale_date || "")) && !expoNightOf(sale);
+    const t = saleTime(sale);
+    return t !== null && EXPOS.some((e) => sale.sale_date === e.startDate && t < Date.parse(e.start));
   }
 
-  // While the Expo is closed on an Expo day (after closing, before opening),
-  // the next opening time as a Date (the till shows TEST MODE); otherwise null.
+  // While "now" is before an Expo opens on its start day (test runs), the
+  // opening time as a Date; otherwise null.
   function testModeUntil(now = new Date()) {
-    const key = localDateKey(now);
-    const expo = expoFor(key);
-    if (!expo) return null;
-    const probe = { sale_date: key, created_at: now.toISOString() };
-    if (expoNightOf(probe)) return null;
-    const opens = nightWindow(expo, key).opens;
-    return now.getTime() < opens ? new Date(opens) : null;
+    const e = EXPOS.find((x) => localDateKey(now) === x.startDate && now.getTime() < Date.parse(x.start));
+    return e ? new Date(Date.parse(e.start)) : null;
   }
 
   // Sales narrowed to one report: "expo" keeps the Expo items of each sale
-  // (all of them while the Expo is open), "main" keeps the rest. Totals are
+  // (all of them during an Expo), "main" keeps the rest. Totals are
   // recomputed from the kept items; a sale with nothing kept is dropped.
-  // "full_total" keeps the whole sale's total. "test" marks a sale made
-  // before opening time on an Expo day; it is left out of every total.
-  function scopeSales(sales, scope) {
+  // "full_total" keeps the whole sale's total. "testRun" marks a sale made
+  // before the Expo opened; while the test run is still on (before opening
+  // time) those sales count, so the reports can be tried out, and once the
+  // Expo opens they get "test" and are left out of every total.
+  function scopeSales(sales, scope, now = new Date()) {
+    const testing = Boolean(testModeUntil(now));
     const wantExpo = scope === "expo";
     const out = [];
     for (const sale of sales) {
@@ -166,8 +132,8 @@
       const items = (sale.items || []).filter((item) => (expo || !tracksStock(item)) === wantExpo);
       if (!items.length) continue;
       const total = round2(items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 0), 0));
-      const test = isTestSale(sale);
-      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0), testRun: test, test });
+      const testRun = isTestSale(sale);
+      out.push({ ...sale, items, subtotal: total, total, full_total: Number(sale.total || 0), testRun, test: testRun && !testing });
     }
     return out;
   }
@@ -477,7 +443,7 @@
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil, reportDate,
+    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil,
   };
 
   if (typeof module !== "undefined" && module.exports) {
