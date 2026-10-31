@@ -6,7 +6,7 @@ const {
   quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
   discardError, stockSummary, aggregateDiscards,
   hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-  scopeSales, expenseError, sumExpenses, isTestSale, testModeUntil,
+  scopeSales, expenseError, sumExpenses, isTestSale, testModeUntil, expoPeriod,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
@@ -1114,7 +1114,8 @@ function markScope() {
   $("stockSection").hidden = expo;
   // Expo shows Item cost and Prep bills; Average sale makes room for them.
   $("reportItemCostCard").hidden = !expo;
-  $("reportAverageCard").hidden = expo;
+  $("reportCostCard").hidden = expo;
+  $("expoTotalsSection").hidden = !expo;
 }
 
 function applyScope() {
@@ -1162,6 +1163,12 @@ async function loadReport() {
     billsFailed = describeError(err);
     return [];
   });
+  // The whole Expo's sales, for its totals against all prep bills.
+  const period = expoPeriod();
+  const expoSalesRequest = PosApi.fetchSalesInRange(period.from, period.to).catch(err => {
+    console.error("Failed to load Expo sales:", err);
+    return null;
+  });
   try {
     sales = await PosApi.fetchSalesInRange(from, to);
     setOnline(true);
@@ -1172,6 +1179,7 @@ async function loadReport() {
   }
   discards = await discardsRequest;
   const bills = await billsRequest;
+  const expoSales = await expoSalesRequest;
   if (token !== report.token) return; // a newer request replaced this one
   report.discards = discards;
   report.discardsFailed = discardsFailed;
@@ -1184,6 +1192,13 @@ async function loadReport() {
     .filter(s => s.sale_date >= from && s.sale_date <= to && !ids.has(s.id))
     .map(s => ({ ...s, pending: true }));
   report.allSales = sales.concat(waiting).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  if (expoSales) {
+    const expoIds = new Set(expoSales.map(s => s.id));
+    report.expoSales = expoSales.concat(pendingSales.filter(s =>
+      s.sale_date >= period.from && s.sale_date <= period.to && !expoIds.has(s.id)));
+  } else {
+    report.expoSales = null;
+  }
   applyScope();
   report.failed = failed;
   $("reportDialogBody").classList.remove("loading");
@@ -1200,20 +1215,16 @@ function renderReport() {
   const expo = report.scope === "expo";
   let profit = r.profitTotal;
   if (expo) {
-    // Expo profit = Expo sales − item cost (cost price × qty sold) − prep bills.
-    // Prep bills (ingredients, decor, other expenses) are separate from item cost prices.
-    const billsTotal = sumExpenses(report.bills);
-    profit = PosCore.round2(r.grandTotal - r.costTotal - billsTotal);
-    $("reportProfitLabel").textContent = "Expo profit";
+    // For the picked dates: sales − item cost. Prep bills cover the whole
+    // Expo, so they're only subtracted in the Whole Expo totals.
+    profit = PosCore.round2(r.grandTotal - r.costTotal);
+    $("reportProfitLabel").textContent = "Profit";
     $("reportProfit").textContent = signedMoney(profit);
     $("reportMargin").textContent = r.grandTotal
-      ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin · sales − item cost − bills` : "Sales − item cost − prep bills";
+      ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin · sales − item cost` : "Sales − item cost";
     $("reportItemCost").textContent = money(r.costTotal);
     $("reportItemCostNote").textContent = r.itemsMissingCost
       ? `${plural(r.itemsMissingCost, "item")} sold without a cost price` : "Cost price × qty sold";
-    $("reportCostLabel").textContent = "Prep bills";
-    $("reportCost").textContent = money(billsTotal);
-    $("reportCostNote").textContent = report.bills.length ? plural(report.bills.length, "bill") : "None added yet";
   } else {
     // With no buying prices at all, "profit" would just repeat total sales.
     const noCosts = r.itemCount > 0 && r.itemsMissingCost === r.itemCount;
@@ -1248,8 +1259,12 @@ function renderReport() {
   renderPaymentBreakdown(r);
   renderTimeChart(r, from, to);
   renderProductTable(r);
-  if (expo) renderBills();
-  else renderStockReport(r);
+  if (expo) {
+    renderExpoTotals();
+    renderBills();
+  } else {
+    renderStockReport(r);
+  }
   renderTransactions();
 }
 
@@ -1492,6 +1507,30 @@ function renderProductTable(r) {
     <div class="split-box"><span>Sold at regular price</span><strong>${plural(r.regularQty, "item")}</strong><small>${money(r.regularSales)}</small></div>
     <div class="split-box disc"><span>🏷️ Sold at discount price</span><strong>${plural(r.discountedQty, "item")}</strong>
       <small>${money(r.discountSales)}${r.discountTotal > 0 ? ` · ${money(r.discountTotal)} given off` : ""}</small></div>` : "";
+}
+
+// ---------- Whole Expo totals ----------
+
+// The whole Expo's sales against all its prep bills: the Expo's final profit.
+function renderExpoTotals() {
+  const period = expoPeriod();
+  const fmt = key => formatDay(key, { day: "numeric", month: "short", year: "numeric" });
+  $("expoPeriodText").textContent = `${fmt(period.from)} – ${fmt(period.to)} · all days together`;
+  if (!report.expoSales) {
+    $("expoTotals").innerHTML = `<div class="notice error">⚠️ Couldn't load the Expo's sales. Check the connection.</div>`;
+    return;
+  }
+  const r = aggregateSales(scopeSales(report.expoSales, "expo"), currentCost);
+  const bills = sumExpenses(report.bills);
+  const profit = PosCore.round2(r.grandTotal - r.costTotal - bills);
+  const box = (label, value, note, cls = "") =>
+    `<div class="expo-total ${cls}"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;
+  $("expoTotals").innerHTML =
+    box("Expo sales", money(r.grandTotal), `${plural(r.transactionCount, "sale")} · ${plural(r.itemCount, "item")}`, "sales") +
+    box("− Item cost", money(r.costTotal), r.itemsMissingCost ? `${plural(r.itemsMissingCost, "item")} without a cost price` : "Cost price × qty sold") +
+    box("− Prep bills", money(bills), report.billsFailed ? "Couldn't load bills" : report.bills.length ? plural(report.bills.length, "bill") : "None added yet") +
+    box("= Expo profit", signedMoney(profit),
+      r.grandTotal ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin` : "", profit < 0 ? "profit negative" : "profit");
 }
 
 // ---------- Expo prep bills ----------

@@ -92,6 +92,12 @@
     { startDate: "2026-10-25", start: "2026-10-25T16:00:00+05:00", endDate: "2026-11-02" },
   ];
 
+  // First and last day of the latest Expo, for its whole-event totals.
+  function expoPeriod() {
+    const e = EXPOS[EXPOS.length - 1];
+    return { from: e.startDate, to: e.endDate };
+  }
+
   function saleTime(sale) {
     const t = sale.created_at ? Date.parse(sale.created_at) : NaN;
     return Number.isFinite(t) ? t : null;
@@ -442,7 +448,7 @@
     margin, quickCashOptions, aggregateSales, bestSellers, productError, salesToCsv,
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
-    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil,
+    scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil, expoPeriod,
   };
 
   if (typeof module !== "undefined" && module.exports) {

@@ -28,6 +28,7 @@ const {
   isExpoSale,
   isTestSale,
   testModeUntil,
+  expoPeriod,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -393,4 +394,8 @@ test("before the Expo opens, test sales count; from 16:00 they are cleared", () 
   assert.equal(later[0].test, true);
   assert.equal(aggregateSales(later).grandTotal, 0);
   assert.equal(aggregateSales(later).testCount, 1);
+});
+
+test("expoPeriod is the whole Expo, 25 Oct - 2 Nov 2026", () => {
+  assert.deepEqual(expoPeriod(), { from: "2026-10-25", to: "2026-11-02" });
 });

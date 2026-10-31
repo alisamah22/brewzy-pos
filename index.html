@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=21" />
+  <link rel="stylesheet" href="styles.css?v=22" />
 </head>
 <body>
   <div class="app">
@@ -248,6 +248,11 @@
         <div class="report-card" id="reportAverageCard"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
       </div>
 
+      <section class="report-section" id="expoTotalsSection" hidden>
+        <div class="section-head"><h3>🎪 Whole Expo</h3><span class="muted" id="expoPeriodText"></span></div>
+        <div class="expo-totals" id="expoTotals"></div>
+      </section>
+
       <div class="report-grid">
         <section class="report-section">
           <div class="section-head">
@@ -299,7 +304,7 @@
       </section>
 
       <section class="report-section" id="billsSection" hidden>
-        <div class="section-head"><h3>🧾 Expo prep bills</h3><span class="muted">All Expo bills (shopping, ingredients, decor, stall fee…), whatever dates are picked above</span></div>
+        <div class="section-head"><h3>🧾 Expo prep bills</h3><span class="muted">For the whole Expo (shopping, ingredients, decor, stall fee…); subtracted in Whole Expo above</span></div>
         <div class="bill-form" id="billForm">
           <input type="hidden" id="billEditingId" />
           <label>Date <input id="billDate" type="date" /></label>
@@ -351,9 +356,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=21"></script>
-<script src="supabase-api.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="pos-core.js?v=22"></script>
+<script src="supabase-api.js?v=22"></script>
+<script src="app.js?v=22"></script>
 
 </body>
 </html>
