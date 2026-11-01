@@ -21,6 +21,10 @@ daily reports are shared across devices.
 - **Several open orders:** tap **＋ New order** to keep the current order and start another; tap an order's
   tab (#1, #2…) to switch between them before payment. Each keeps its own items, payment method and cash.
   Paying or cancelling one leaves the others open; open orders are saved on the till through a reload
+- **Pay later (named pending orders):** tap **🕒 Pay later** to save an order under a name (e.g. *Mippe Boss*).
+  It's shared by every till until paid: tap **🕒 Pending** to open it on any till, add items, then pay it
+  (it leaves the list) or save it again. Saving under a name that's already pending adds the items to it.
+  Needs the `2026-11-01-pending-orders.sql` migration
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
   that show the change to give, or how much cash is short
 - Cash / Transfer / Card payment, itemised receipt with a Print button
@@ -78,6 +82,11 @@ else keeps working, but saving a discount shows a "database needs a one-time upd
 **Expo prep bills:** run
 [`supabase/migrations/2026-10-25-expo-bills.sql`](supabase/migrations/2026-10-25-expo-bills.sql)
 once. It adds the `expenses` table. Until it is run, the Expo report shows sales but bills can't be saved.
+
+**Pay later orders:** run
+[`supabase/migrations/2026-11-01-pending-orders.sql`](supabase/migrations/2026-11-01-pending-orders.sql)
+once. It adds the `pending_orders` table. Until it is run, saving an order for later shows a "database needs
+a one-time update" message; everything else works.
 
 ### Keeping the project awake
 Supabase **pauses free-tier projects after about a week with no activity**. A paused project

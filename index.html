@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=22" />
+  <link rel="stylesheet" href="styles.css?v=23" />
 </head>
 <body>
   <div class="app">
@@ -71,6 +71,7 @@
           <div class="change-row" id="changeRow"><span id="changeLabel">Change to give</span><strong id="changeDue">MVR 0.00</strong></div>
         </div>
 
+        <button class="secondary pay-later-btn" id="payLaterBtn" type="button" hidden>🕒 Pay later · save under a name</button>
         <button class="pay-btn" id="payBtn" disabled>Add items to start</button>
       </aside>
     </main>
@@ -188,6 +189,43 @@
           <div id="manageItemList" class="manage-list"></div>
         </div>
       </div>
+    </div>
+  </dialog>
+
+  <!-- Pay later: save the order under a name -->
+  <dialog id="payLaterDialog">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h2>🕒 Pay later</h2>
+          <p>Save this order under a name. It stays pending on every till until it's paid.</p>
+        </div>
+        <button type="button" class="icon-btn" id="closePayLaterBtn" aria-label="Close">✕</button>
+      </div>
+      <label class="pay-later-name">Name
+        <input id="payLaterName" placeholder="e.g. Mippe Boss" autocomplete="off" maxlength="60" />
+      </label>
+      <div class="pending-picks" id="pendingPicks"></div>
+      <div class="pay-later-summary" id="payLaterSummary"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="cancelPayLaterBtn">Cancel</button>
+        <button type="button" class="primary" id="savePayLaterBtn">Save as pending</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Pending (pay later) orders, shared by every till -->
+  <dialog id="pendingDialog">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h2>🕒 Pending orders</h2>
+          <p>Unpaid orders saved under a name. Tap one to add items or take payment.</p>
+        </div>
+        <button type="button" class="icon-btn" id="closePendingBtn" aria-label="Close">✕</button>
+      </div>
+      <div id="pendingNotice" class="notice" hidden></div>
+      <div id="pendingList" class="pending-list"></div>
     </div>
   </dialog>
 
@@ -356,9 +394,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=22"></script>
-<script src="supabase-api.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="pos-core.js?v=23"></script>
+<script src="supabase-api.js?v=23"></script>
+<script src="app.js?v=23"></script>
 
 </body>
 </html>

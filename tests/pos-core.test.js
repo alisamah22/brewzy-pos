@@ -29,6 +29,9 @@ const {
   isTestSale,
   testModeUntil,
   expoPeriod,
+  toPendingItems,
+  mergePendingItems,
+  pendingSummary,
 } = require("../pos-core.js");
 
 test("money formats as MVR with two decimals and thousands separators", () => {
@@ -398,4 +401,25 @@ test("before the Expo opens, test sales count; from 16:00 they are cleared", () 
 
 test("expoPeriod is the whole Expo, 25 Oct - 2 Nov 2026", () => {
   assert.deepEqual(expoPeriod(), { from: "2026-10-25", to: "2026-11-02" });
+});
+
+test("pending (pay later) orders keep lines, merge repeat orders and total at menu prices", () => {
+  const cart = [
+    { id: "w", name: "Boava Wrap", qty: 2, discounted: false, price: 60, emoji: "x" },
+    { id: "b", name: "Brownie", qty: 1, discounted: true, price: 30 },
+  ];
+  const items = toPendingItems(cart);
+  assert.deepEqual(items, [
+    { id: "w", name: "Boava Wrap", qty: 2, discounted: false },
+    { id: "b", name: "Brownie", qty: 1, discounted: true },
+  ]);
+  const merged = mergePendingItems(items, [
+    { id: "w", name: "Boava Wrap", qty: 1, discounted: false },
+    { id: "b", name: "Brownie", qty: 1, discounted: false },
+  ]);
+  assert.deepEqual(merged.map(l => [l.id, l.qty, l.discounted]), [["w", 3, false], ["b", 1, true], ["b", 1, false]]);
+  assert.equal(items[0].qty, 2); // original untouched
+  const menu = [{ id: "w", price: 60 }, { id: "b", price: 40, sale_price: 30 }];
+  assert.deepEqual(pendingSummary(merged, menu), { count: 5, total: 180 + 30 + 40, missing: 0 });
+  assert.deepEqual(pendingSummary([{ id: "gone", qty: 2 }], menu), { count: 0, total: 0, missing: 2 });
 });

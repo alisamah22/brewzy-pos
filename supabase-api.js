@@ -145,6 +145,32 @@ async function deleteExpense(id) {
   if (error) throw error;
 }
 
+// --- Named "pay later" orders, shared by every till ---
+async function fetchPendingOrders() {
+  const { data, error } = await supabaseClient
+    .from("pending_orders")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertPendingOrder(order) {
+  const { error } = await supabaseClient.from("pending_orders").insert(order);
+  if (error) throw error;
+}
+
+async function updatePendingOrder(id, fields) {
+  const { data, error } = await supabaseClient.from("pending_orders").update(fields).eq("id", id).select("id");
+  if (error) throw error;
+  return (data || []).length > 0; // false when it was already paid / deleted elsewhere
+}
+
+async function deletePendingOrder(id) {
+  const { error } = await supabaseClient.from("pending_orders").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // Cheap query used to check the database is reachable.
 async function ping() {
   const { error } = await supabaseClient.from("products").select("id").limit(1);
@@ -156,5 +182,6 @@ window.PosApi = {
   insertSale, fetchSalesInRange, setSaleVoided,
   fetchDiscardsForProduct, fetchDiscardsInRange, insertDiscard, updateDiscard, deleteDiscard,
   fetchExpensesInRange, insertExpense, updateExpense, deleteExpense,
+  fetchPendingOrders, insertPendingOrder, updatePendingOrder, deletePendingOrder,
   ping,
 };

@@ -92,6 +92,22 @@ create policy "anon delete expenses" on public.expenses for delete to anon using
 
 create index if not exists expenses_expense_date_idx on public.expenses (expense_date);
 
+-- Named "pay later" orders (e.g. "Mippe Boss"), shared by every till until
+-- they're paid. "items" holds the lines: [{ id, name, qty, discounted }].
+create table if not exists public.pending_orders (
+  id         uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  name       text not null,
+  items      jsonb not null default '[]'::jsonb
+);
+
+alter table public.pending_orders enable row level security;
+create policy "anon read pending orders"   on public.pending_orders for select to anon using (true);
+create policy "anon insert pending orders" on public.pending_orders for insert to anon with check (true);
+create policy "anon update pending orders" on public.pending_orders for update to anon using (true) with check (true);
+create policy "anon delete pending orders" on public.pending_orders for delete to anon using (true);
+
 -- Optional one-time seed of the starting menu.
 -- Run this block ONCE; re-running it duplicates the items.
 insert into public.products (name, price, category, emoji) values

@@ -155,6 +155,41 @@
     return round2(expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0));
   }
 
+  // Lines kept with a named pending (pay later) order: which item, how many,
+  // and whether it's at the discount price. Prices come from the menu.
+  function toPendingItems(cart) {
+    return cart.map((i) => ({ id: i.id, name: i.name, qty: i.qty, discounted: Boolean(i.discounted) }));
+  }
+
+  // Add more lines to a pending order, merging the same item at the same price.
+  function mergePendingItems(existing, added) {
+    const out = existing.map((l) => ({ ...l }));
+    for (const line of added) {
+      const same = out.find((l) => l.id === line.id && Boolean(l.discounted) === Boolean(line.discounted));
+      if (same) same.qty += line.qty;
+      else out.push({ ...line });
+    }
+    return out;
+  }
+
+  // Item count and total of pending lines at today's menu prices; lines whose
+  // item is no longer on the menu are counted in "missing".
+  function pendingSummary(items, menu) {
+    let count = 0;
+    let total = 0;
+    let missing = 0;
+    for (const line of items || []) {
+      const p = menu.find((x) => x.id === line.id);
+      if (!p) {
+        missing += line.qty;
+        continue;
+      }
+      count += line.qty;
+      total += (line.discounted && hasDiscount(p) ? sellingPrice(p) : Number(p.price)) * line.qty;
+    }
+    return { count, total: round2(total), missing };
+  }
+
   function calcTotals(cart) {
     const subtotal = round2(cart.reduce((sum, item) => sum + item.price * item.qty, 0));
     return { subtotal, tax: 0, total: subtotal };
@@ -449,6 +484,7 @@
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
     scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil, expoPeriod,
+    toPendingItems, mergePendingItems, pendingSummary,
   };
 
   if (typeof module !== "undefined" && module.exports) {
