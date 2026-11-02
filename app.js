@@ -458,7 +458,7 @@ function renderOrderTabs() {
   const order = activeOrder();
   $("orderTitle").textContent = order.name ? `🕒 ${order.name}` : orders.length > 1 ? `Order #${order.no}` : "Current Order";
   $("payLaterBtn").hidden = !cart.length;
-  $("payLaterBtn").textContent = order.pendingId ? `🕒 Save ${order.name}'s order again (pay later)` : "🕒 Pay later · save under a name";
+  $("payLaterBtn").textContent = order.pendingId ? `🕒 Update ${order.name}'s pending order (pay later)` : "🕒 Pay later · save under a name";
 }
 
 function renderCart() {
@@ -673,6 +673,8 @@ async function flushPaidPendingOrders() {
 function openPayLater() {
   if (!cart.length || saving) return;
   const order = activeOrder();
+  // Opened from the Pending list: save straight back into the same order.
+  if (order.pendingId) return savePayLater(order.name);
   $("payLaterName").value = order.name || "";
   $("pendingPicks").innerHTML = order.pendingId ? "" : pendingOrders.map(p =>
     `<button type="button" class="chip" data-pick="${escapeHtml(p.name)}">＋ ${escapeHtml(p.name)}</button>`).join("");
@@ -683,8 +685,8 @@ function openPayLater() {
   $("payLaterName").focus();
 }
 
-async function savePayLater() {
-  const name = $("payLaterName").value.trim().replace(/\s+/g, " ");
+async function savePayLater(knownName) {
+  const name = (typeof knownName === "string" ? knownName : $("payLaterName").value).trim().replace(/\s+/g, " ");
   if (!name) {
     toast("Please type a name, e.g. Mippe Boss.", "error");
     $("payLaterName").focus();
@@ -702,7 +704,7 @@ async function savePayLater() {
       // Brought back from the pending list: save its lines (and any new name).
       const found = await PosApi.updatePendingOrder(order.pendingId, { name, items, updated_at: now });
       if (!found) await PosApi.insertPendingOrder({ id: order.pendingId, name, items, updated_at: now });
-      message = `Saved ${name}'s order as pending ✓`;
+      message = `Updated ${name}'s pending order ✓`;
     } else if (same) {
       // That name already has a pending order: add these items to it.
       if (!confirm(`"${same.name}" already has a pending order. Add these items to it?`)) {
@@ -723,7 +725,7 @@ async function savePayLater() {
     return;
   }
   btn.disabled = false;
-  $("payLaterDialog").close();
+  if ($("payLaterDialog").open) $("payLaterDialog").close();
   closeActiveOrder();
   toast(message, "success");
   await refreshPendingOrders();

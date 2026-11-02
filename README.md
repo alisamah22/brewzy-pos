@@ -23,7 +23,7 @@ daily reports are shared across devices.
   Paying or cancelling one leaves the others open; open orders are saved on the till through a reload
 - **Pay later (named pending orders):** tap **🕒 Pay later** to save an order under a name (e.g. *Mippe Boss*).
   It's shared by every till until paid: tap **🕒 Pending** to open it on any till, add items, then pay it
-  (it leaves the list) or save it again. Saving under a name that's already pending adds the items to it.
+  (it leaves the list) or tap **🕒 Update … pending order** to save the changes straight back (no name asked). Saving under a name that's already pending adds the items to it.
   Needs the `2026-11-01-pending-orders.sql` migration
 - Cart with +/− controls, per-line totals, and quick-cash buttons (Exact, 50, 100…)
   that show the change to give, or how much cash is short
