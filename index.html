@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=26" />
 </head>
 <body class="logged-out">
   <!-- Login: each vendor sees only their own menu, sales and reports -->
@@ -41,7 +41,25 @@
     <div id="testBanner" class="test-banner" role="status" aria-live="polite" hidden></div>
 
     <main class="layout">
+      <!-- Tables: tap a table to open its order -->
+      <section class="tables-view" id="tablesView" aria-label="Tables" hidden>
+        <div class="tables-head">
+          <h2>🪑 Tables</h2>
+          <div class="tables-legend"><span class="dot free"></span>Free <span class="dot busy"></span>Occupied</div>
+          <div class="tables-actions">
+            <button type="button" class="secondary" id="tablesPendingBtn">🕒 Pending</button>
+            <button type="button" class="secondary" id="editTablesBtn">✏️ Edit tables</button>
+          </div>
+        </div>
+        <div id="tablesNotice" class="notice" hidden></div>
+        <div class="tables-grid" id="tablesGrid"></div>
+      </section>
+
       <section class="products-panel" aria-label="Menu">
+        <div class="order-context" id="orderContext">
+          <button type="button" class="secondary" id="backToTablesBtn">← Tables</button>
+          <strong id="orderContextTitle">🥡 Counter / Takeaway</strong>
+        </div>
         <div class="toolbar">
           <div class="search-wrap">
             <span class="search-icon" aria-hidden="true">🔍</span>
@@ -408,9 +426,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=25"></script>
-<script src="supabase-api.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="pos-core.js?v=26"></script>
+<script src="supabase-api.js?v=26"></script>
+<script src="app.js?v=26"></script>
 
 </body>
 </html>

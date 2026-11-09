@@ -6,6 +6,11 @@ completed sales are stored in Supabase, so every till shares one menu and
 daily reports are shared across devices.
 
 ## Features
+- **Tables:** the till opens on a Tables screen (Table 1–5 to start; **＋ Add table**, **✏️ Edit tables** to
+  rename/remove). Tap a table to open its order: every change is saved and shared by all tills, the table
+  shows as occupied (total, items, time open) until paid, then it's free again. **🥡 Counter / Takeaway** is
+  for quick sales without a table. A table's order can also be moved to a name with **🕒 Pay later**.
+  Needs `2026-11-09-b-tables.sql`
 - **Vendor logins:** each vendor (e.g. **Brewzy**) logs in with a user name and password and sees only their
   own menu, sales, Main/Expo reports, prep bills, discards and pay-later orders; the database enforces this.
   Data saved on a till (offline sales, open orders) is kept per vendor. **👤 Name · Log out** is in the top bar

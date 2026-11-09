@@ -855,3 +855,43 @@ body:not(.logged-out) .login-screen { display: none; }
 .login-error { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 700; text-align: left; }
 .vendor-chip { white-space: nowrap; }
 @media (max-width: 620px) { .vendor-chip { padding: 8px 10px; font-size: 13px; } }
+
+/* ---------- Tables ---------- */
+body.tables-mode .products-panel, body.tables-mode .cart-panel, body.tables-mode .mobile-cart-bar { display: none !important; }
+body.tables-mode .tables-view { display: block; }
+.tables-view { grid-column: 1 / -1; padding: 22px; }
+.tables-view[hidden] { display: none !important; }
+.tables-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.tables-head h2 { margin: 0; font-size: 24px; }
+.tables-legend { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.tables-legend .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-left: 8px; }
+.dot.free { background: white; border: 2px solid var(--good); }
+.dot.busy { background: var(--primary); }
+.tables-actions { margin-left: auto; display: flex; gap: 8px; }
+.tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+.table-tile {
+  position: relative; min-height: 130px; border-radius: 18px; padding: 16px; text-align: left;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+  background: white; border: 3px solid var(--good); color: var(--text);
+  box-shadow: 0 1px 0 var(--line), 0 4px 14px rgba(31,42,55,.05);
+}
+.table-tile:active { transform: scale(.97); }
+.table-tile .t-name { font-size: 20px; font-weight: 900; }
+.table-tile .t-status { font-size: 14px; font-weight: 800; color: var(--good); }
+.table-tile .t-total { font-size: 20px; font-weight: 900; }
+.table-tile .t-meta { font-size: 13px; color: var(--muted); }
+.table-tile.busy { background: var(--primary); border-color: var(--primary); color: white; }
+.table-tile.busy .t-status, .table-tile.busy .t-meta { color: rgba(255,255,255,.9); }
+.table-tile.counter { background: var(--expo-soft); border-color: var(--expo); grid-column: span 2; }
+.table-tile.counter .t-status { color: var(--expo); }
+.table-tile.add { border: 3px dashed var(--line); background: transparent; color: var(--muted); align-items: center; justify-content: center; font-weight: 800; font-size: 16px; }
+.table-edit { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
+.table-edit button { border: 0; border-radius: 9px; padding: 6px 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,.15); font-size: 13px; font-weight: 700; }
+.order-context { display: flex; align-items: center; gap: 12px; margin: -6px 0 14px; }
+.order-context strong { font-size: 18px; }
+@media (max-width: 620px) {
+  .tables-view { padding: 16px; }
+  .tables-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .table-tile { min-height: 110px; }
+  .tables-actions { margin-left: 0; width: 100%; }
+}

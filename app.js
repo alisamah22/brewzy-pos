@@ -104,7 +104,7 @@ function isNetworkError(err) {
 
 function describeError(err) {
   const msg = String((err && (err.message || err.details)) || "");
-  if ((/column/i.test(msg) && /cost|voided|stock_qty|sale_price/i.test(msg)) || /discards|expenses|pending_orders/i.test(msg)) {
+  if ((/column/i.test(msg) && /cost|voided|stock_qty|sale_price/i.test(msg)) || /discards|expenses|pending_orders|dining_tables|table_id/i.test(msg)) {
     return "The database needs a one-time update: run the migration SQL from the README.";
   }
   if (/permission denied|row-level security/i.test(msg)) {
@@ -384,7 +384,8 @@ function activeOrder() {
 }
 
 function nextOrderNo() {
-  return orders.length ? Math.max(...orders.map(o => o.no)) + 1 : 1;
+  const counter = orders.filter(o => !o.tableId);
+  return counter.length ? Math.max(...counter.map(o => o.no)) + 1 : 1;
 }
 
 function restoreOrders() {
@@ -443,7 +444,7 @@ function newOrder() {
 // (reusing one that's already open), keeping the other held orders.
 function closeActiveOrder() {
   orders = orders.filter(o => o.id !== activeOrderId);
-  const empty = orders.find(o => !o.cart.length);
+  const empty = orders.find(o => !o.cart.length && !o.tableId);
   const next = empty || blankOrder(nextOrderNo());
   if (!empty) orders.push(next);
   activeOrderId = next.id;
@@ -451,7 +452,7 @@ function closeActiveOrder() {
 }
 
 function renderOrderTabs() {
-  const tabs = orders.map(o => {
+  const tabs = orders.filter(o => !o.tableId).map(o => {
     const lines = o.id === activeOrderId ? cart : o.cart;
     const count = lines.reduce((sum, i) => sum + i.qty, 0);
     const active = o.id === activeOrderId;
@@ -463,22 +464,30 @@ function renderOrderTabs() {
   }).join("");
   $("orderTabs").innerHTML = tabs +
     `<button type="button" class="order-tab new" id="newOrderTabBtn" title="Keep this order and start another">＋ New order</button>` +
-    `<button type="button" class="order-tab pending-tab" id="pendingTabBtn" title="Unpaid orders saved under a name">🕒 Pending${pendingOrders.length ? ` · ${pendingOrders.length}` : ""}</button>`;
+    `<button type="button" class="order-tab pending-tab" id="pendingTabBtn" title="Unpaid orders saved under a name">🕒 Pending${namedPending().length ? ` · ${namedPending().length}` : ""}</button>`;
   const order = activeOrder();
-  $("orderTitle").textContent = order.name ? `🕒 ${order.name}` : orders.length > 1 ? `Order #${order.no}` : "Current Order";
+  $("orderTabs").hidden = Boolean(order.tableId); // a table's order has no tabs
+  $("orderContextTitle").textContent = order.tableId ? `🪑 ${order.name}` : "🥡 Counter / Takeaway";
+  const counterOrders = orders.filter(o => !o.tableId).length;
+  $("orderTitle").textContent = order.tableId ? `🪑 ${order.name}` : order.name ? `🕒 ${order.name}`
+    : counterOrders > 1 ? `Order #${order.no}` : "Current Order";
   $("payLaterBtn").hidden = !cart.length;
-  $("payLaterBtn").textContent = order.pendingId ? `🕒 Update ${order.name}'s pending order (pay later)` : "🕒 Pay later · save under a name";
+  $("payLaterBtn").textContent = order.tableId ? "🕒 Pay later · move to a name"
+    : order.pendingId ? `🕒 Update ${order.name}'s pending order (pay later)` : "🕒 Pay later · save under a name";
 }
 
 function renderCart() {
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
   const t = calcTotals(cart);
+  const others = orders.filter(o => !o.tableId).length - 1;
   $("itemCount").textContent = plural(count, "item") +
-    (orders.length > 1 ? ` · ${plural(orders.length - 1, "other order")} open` : "");
+    (!activeOrder().tableId && others > 0 ? ` · ${plural(others, "other order")} open` : "");
   $("clearCartBtn").hidden = !cart.length;
-  $("clearCartBtn").textContent = activeOrder().pendingId ? "Close here" : orders.length > 1 ? "Cancel order" : "Clear all";
+  $("clearCartBtn").textContent = activeOrder().tableId ? "Clear table"
+    : activeOrder().pendingId ? "Close here" : orders.length > 1 ? "Cancel order" : "Clear all";
   renderOrderTabs();
   saveOrders();
+  if (activeOrder().tableId) scheduleTableSave(activeOrder());
 
   $("cartItems").innerHTML = cart.length ? cart.map(item => `
     <div class="cart-row">
@@ -631,12 +640,19 @@ async function processPayment() {
   saving = false;
 
   const paidOrder = activeOrder();
+  if (paidOrder.tableId) cancelTableSave(paidOrder);
   showReceipt(sale, received, uploaded);
   closeActiveOrder();
   if (paidOrder.pendingId) removePaidPendingOrder(paidOrder.pendingId);
+  if (paidOrder.tableId) showTables(); // the table is free again
 }
 
 // ---------- Pay later: named pending orders shared by every till ----------
+
+// Pending orders saved under a name (not a table's open order).
+function namedPending() {
+  return pendingOrders.filter(p => !p.table_id);
+}
 
 let pendingOrders = [];
 let pendingFailed = false;
@@ -654,6 +670,7 @@ async function refreshPendingOrders() {
   pendingOrders = pendingOrders.filter(p => !pendingDeletes.includes(p.id));
   renderOrderTabs();
   if ($("pendingDialog").open) renderPendingList();
+  if (document.body.classList.contains("tables-mode")) renderTables();
 }
 
 // A paid pay-later order leaves the shared list. If the till is offline it's
@@ -683,13 +700,13 @@ function openPayLater() {
   if (!cart.length || saving) return;
   const order = activeOrder();
   // Opened from the Pending list: save straight back into the same order.
-  if (order.pendingId) return savePayLater(order.name);
-  $("payLaterName").value = order.name || "";
-  $("pendingPicks").innerHTML = order.pendingId ? "" : pendingOrders.map(p =>
+  if (order.pendingId && !order.tableId) return savePayLater(order.name);
+  $("payLaterName").value = order.tableId ? "" : order.name || "";
+  $("pendingPicks").innerHTML = order.pendingId && !order.tableId ? "" : namedPending().map(p =>
     `<button type="button" class="chip" data-pick="${escapeHtml(p.name)}">＋ ${escapeHtml(p.name)}</button>`).join("");
   const count = cart.reduce((sum, i) => sum + i.qty, 0);
   $("payLaterSummary").textContent = `${plural(count, "item")} · ${money(calcTotals(cart).total)}` +
-    (order.pendingId ? "" : pendingOrders.length ? " · tap a name above to add to their pending order" : "");
+    (order.pendingId && !order.tableId ? "" : namedPending().length ? " · tap a name above to add to their pending order" : "");
   $("payLaterDialog").showModal();
   $("payLaterName").focus();
 }
@@ -706,10 +723,16 @@ async function savePayLater(knownName) {
   const btn = $("savePayLaterBtn");
   btn.disabled = true;
   let message;
+  if (order.tableId) cancelTableSave(order);
   try {
     const now = new Date().toISOString();
-    const same = pendingOrders.find(p => p.id !== order.pendingId && p.name.toLowerCase() === name.toLowerCase());
-    if (order.pendingId && !same) {
+    const same = namedPending().find(p => p.id !== order.pendingId && p.name.toLowerCase() === name.toLowerCase());
+    if (order.tableId && !same) {
+      // A table's order moves to a name; the table becomes free.
+      if (order.savedRow) await PosApi.deletePendingOrder(order.pendingId);
+      await PosApi.insertPendingOrder({ id: newId(), name, items, updated_at: now });
+      message = `Moved ${order.name}'s order to ${name} (pay later) ✓ · ${order.name} is free`;
+    } else if (order.pendingId && !same) {
       // Brought back from the pending list: save its lines (and any new name).
       const found = await PosApi.updatePendingOrder(order.pendingId, { name, items, updated_at: now });
       if (!found) await PosApi.insertPendingOrder({ id: order.pendingId, name, items, updated_at: now });
@@ -721,7 +744,7 @@ async function savePayLater(knownName) {
         return;
       }
       await PosApi.updatePendingOrder(same.id, { items: mergePendingItems(same.items || [], items), updated_at: now });
-      if (order.pendingId && order.pendingId !== same.id) await PosApi.deletePendingOrder(order.pendingId);
+      if (order.pendingId && order.pendingId !== same.id && (!order.tableId || order.savedRow)) await PosApi.deletePendingOrder(order.pendingId);
       message = `Added to ${same.name}'s pending order ✓`;
     } else {
       await PosApi.insertPendingOrder({ id: newId(), name, items, updated_at: now });
@@ -736,6 +759,7 @@ async function savePayLater(knownName) {
   btn.disabled = false;
   if ($("payLaterDialog").open) $("payLaterDialog").close();
   closeActiveOrder();
+  if (order.tableId) showTables();
   toast(message, "success");
   await refreshPendingOrders();
 }
@@ -751,7 +775,7 @@ function renderPendingList() {
   notice.hidden = !pendingFailed;
   notice.innerHTML = pendingFailed ? `<div class="notice error">⚠️ Couldn't load pending orders. ${escapeHtml(pendingFailed)}</div>` : "";
   const openHere = new Set(orders.map(o => o.pendingId).filter(Boolean));
-  $("pendingList").innerHTML = pendingOrders.length ? pendingOrders.map(p => {
+  $("pendingList").innerHTML = namedPending().length ? namedPending().map(p => {
     const sum = pendingSummary(p.items, products);
     const lines = (p.items || []).map(l => `${l.qty}× ${l.name}${l.discounted ? " 🏷️" : ""}`).join(", ");
     const when = new Date(p.updated_at || p.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -776,6 +800,7 @@ function openPendingOrder(id) {
   const p = pendingOrders.find(x => x.id === id);
   if (!p) return;
   $("pendingDialog").close();
+  showOrderView();
   const here = orders.find(o => o.pendingId === id);
   if (here) return switchOrder(here.id);
   saveOrders();
@@ -788,7 +813,7 @@ function openPendingOrder(id) {
   }
   const lines = cart;
   const current = activeOrder();
-  const order = current && !current.cart.length && !current.pendingId ? current : blankOrder(nextOrderNo());
+  const order = current && !current.cart.length && !current.pendingId && !current.tableId ? current : blankOrder(nextOrderNo());
   Object.assign(order, { cart: lines, name: p.name, pendingId: p.id });
   if (order !== current) orders.push(order);
   if (current && current !== order && !current.cart.length) orders = orders.filter(o => o !== current);
@@ -1936,6 +1961,10 @@ function renderAll() {
   if ($("itemDialog").open) renderManageList();
 }
 
+function tickClockTables() {
+  if (vendor && document.body.classList.contains("tables-mode")) renderTables();
+}
+
 function tickClock() {
   $("clock").textContent = new Date().toLocaleString("en-GB", {
     weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
@@ -2004,6 +2033,15 @@ $("cartItems").addEventListener("click", e => {
 $("clearCartBtn").addEventListener("click", () => {
   if (!cart.length) return;
   const open = activeOrder();
+  if (open.tableId) {
+    if (confirm(`Remove all items from ${open.name}? The table becomes free.`)) {
+      cart = [];
+      renderCart(); // saves the empty order, which frees the table
+      renderProducts();
+      backToTables();
+    }
+    return;
+  }
   if (open.pendingId) {
     if (confirm(`Close ${open.name}'s order on this till? It stays pending as it was last saved.`)) closeActiveOrder();
     return;
@@ -2194,6 +2232,245 @@ document.addEventListener("keydown", e => {
 window.addEventListener("online", () => { if (vendor) { flushPending(); loadProducts(); } });
 window.addEventListener("offline", () => setOnline(false));
 
+// ---------- Tables ----------
+// The till opens on the Tables screen. Tapping a table opens its order; every
+// change is saved to the table's shared pending order, so all tills see the
+// table as occupied until it's paid.
+
+const TABLES_CACHE_KEY = "brewzyTables";
+let tables = [];
+let tablesFailed = false;
+let editingTables = false;
+const tableSaveTimers = new Map();
+
+async function loadTables() {
+  try {
+    tables = await PosApi.fetchTables();
+    tablesFailed = false;
+    if (!tables.length) {
+      // First time for this vendor: start with Table 1 to Table 5.
+      await PosApi.insertTables([1, 2, 3, 4, 5].map(n => ({ name: `Table ${n}`, sort: n })));
+      tables = await PosApi.fetchTables();
+    }
+    writeStore(TABLES_CACHE_KEY, tables);
+  } catch (err) {
+    console.error("Failed to load tables:", err);
+    tablesFailed = describeError(err);
+    tables = readStore(TABLES_CACHE_KEY, tables);
+  }
+  renderTables();
+}
+
+function tableOrderOf(tableId) {
+  return pendingOrders.find(p => p.table_id === tableId);
+}
+
+function elapsed(since) {
+  const mins = Math.max(0, Math.floor((Date.now() - Date.parse(since)) / 60000));
+  return `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, "0")}`;
+}
+
+function renderTables() {
+  const notice = $("tablesNotice");
+  const problem = tablesFailed || pendingFailed;
+  notice.hidden = !problem;
+  notice.innerHTML = problem ? `<div class="notice error">⚠️ ${escapeHtml(problem)}</div>` : "";
+  $("editTablesBtn").textContent = editingTables ? "✓ Done editing" : "✏️ Edit tables";
+  $("tablesPendingBtn").textContent = `🕒 Pending${namedPending().length ? ` · ${namedPending().length}` : ""}`;
+  const counter = orders.filter(o => !o.tableId && o.cart.length);
+  const counterCount = counter.reduce((sum, o) => sum + o.cart.reduce((s, i) => s + i.qty, 0), 0);
+  $("tablesGrid").innerHTML = `
+    <button type="button" class="table-tile counter" data-counter>
+      <span class="t-name">🥡 Counter / Takeaway</span>
+      <span class="t-status">${counter.length ? `${plural(counter.length, "open order")} · ${plural(counterCount, "item")}` : "Quick sale without a table"}</span>
+    </button>` +
+    tables.map(t => {
+      const p = tableOrderOf(t.id);
+      const sum = p ? pendingSummary(p.items, products) : null;
+      const busy = Boolean(p && sum.count);
+      return `
+      <button type="button" class="table-tile ${busy ? "busy" : ""}" data-table="${escapeHtml(t.id)}"
+        aria-label="${escapeHtml(t.name)}, ${busy ? `occupied, ${money(sum.total)}` : "free"}">
+        ${editingTables ? `<span class="table-edit">
+          <span role="button" tabindex="0" class="t-rename" data-rename="${escapeHtml(t.id)}">✏️ Rename</span>
+          ${busy ? "" : `<span role="button" tabindex="0" class="t-delete" data-delete-table="${escapeHtml(t.id)}">🗑</span>`}
+        </span>` : ""}
+        <span class="t-name">${escapeHtml(t.name)}</span>
+        ${busy ? `<span class="t-total">${money(sum.total)}</span>
+          <span class="t-meta">${plural(sum.count, "item")} · ⏱ ${elapsed(p.created_at)}</span>`
+          : `<span class="t-status">Free</span>`}
+      </button>`;
+    }).join("") +
+    `<button type="button" class="table-tile add" data-add-table>＋ Add table</button>`;
+}
+
+function showTables() {
+  document.body.classList.add("tables-mode");
+  $("tablesView").hidden = false;
+  renderTables();
+  refreshPendingOrders();
+}
+
+function showOrderView() {
+  document.body.classList.remove("tables-mode");
+  $("tablesView").hidden = true;
+}
+
+// Leave the order screen: a table's order is saved and closed on this till.
+async function backToTables() {
+  const order = activeOrder();
+  if (order && order.tableId) {
+    saveOrders();
+    const ok = await saveTableOrder(order);
+    if (!ok && order.cart.length) {
+      toast(`Couldn't save ${order.name}'s order. Check the connection and try again.`, "error", 6000);
+      return;
+    }
+    closeActiveOrder();
+  }
+  showTables();
+}
+
+async function openTable(id) {
+  const table = tables.find(t => t.id === id);
+  if (!table || saving) return;
+  await refreshPendingOrders();
+  const p = tableOrderOf(id);
+  saveOrders();
+  cart = [];
+  let dropped = 0;
+  for (const line of (p && p.items) || []) {
+    const product = products.find(x => x.id === line.id);
+    if (product) putInCart(product, line.qty, line.discounted);
+    else dropped += line.qty;
+  }
+  const order = { ...blankOrder(0), cart, name: table.name, tableId: id, pendingId: p ? p.id : newId(), savedRow: Boolean(p) };
+  orders = orders.filter(o => !o.tableId); // only one table open at a time on a till
+  orders.push(order);
+  activeOrderId = order.id;
+  showOrderView();
+  showActiveOrder();
+  if (dropped) toast(`${plural(dropped, "item")} no longer on the menu left out.`, "info");
+}
+
+function openCounter() {
+  orders = orders.filter(o => !o.tableId);
+  if (!orders.length) orders.push(blankOrder(1));
+  if (!orders.some(o => o.id === activeOrderId)) activeOrderId = orders[0].id;
+  showOrderView();
+  showActiveOrder();
+}
+
+function scheduleTableSave(order) {
+  clearTimeout(tableSaveTimers.get(order.id));
+  tableSaveTimers.set(order.id, setTimeout(() => saveTableOrder(order), 700));
+}
+
+function cancelTableSave(order) {
+  clearTimeout(tableSaveTimers.get(order.id));
+  tableSaveTimers.delete(order.id);
+}
+
+// Save a table's order to its shared pending order: an empty order frees the table.
+async function saveTableOrder(order) {
+  cancelTableSave(order);
+  const items = toPendingItems(order.cart);
+  const now = new Date().toISOString();
+  try {
+    if (!items.length) {
+      if (order.savedRow) await PosApi.deletePendingOrder(order.pendingId);
+      order.savedRow = false;
+      pendingOrders = pendingOrders.filter(p => p.id !== order.pendingId);
+    } else {
+      const row = { name: order.name, table_id: order.tableId, items, updated_at: now };
+      let found = order.savedRow && await PosApi.updatePendingOrder(order.pendingId, row);
+      if (!found) {
+        try {
+          await PosApi.insertPendingOrder({ id: order.pendingId, ...row });
+        } catch (err) {
+          if (!(err && err.code === "23505")) throw err;
+          // Another till opened this table first: add to its order.
+          const rows = await PosApi.fetchPendingOrders();
+          const existing = rows.find(p => p.table_id === order.tableId) || rows.find(p => p.id === order.pendingId);
+          if (!existing) throw err;
+          const merged = existing.id === order.pendingId ? items : mergePendingItems(existing.items || [], items);
+          await PosApi.updatePendingOrder(existing.id, { ...row, items: merged });
+          order.pendingId = existing.id;
+        }
+      }
+      order.savedRow = true;
+      const local = pendingOrders.find(p => p.id === order.pendingId);
+      if (local) Object.assign(local, row);
+      else pendingOrders.push({ id: order.pendingId, created_at: now, ...row });
+    }
+    order.saveFailed = false;
+    return true;
+  } catch (err) {
+    console.error("Failed to save table order:", err);
+    if (!order.saveFailed) toast(`Couldn't save ${order.name}'s order. ${describeError(err)}`, "error", 6000);
+    order.saveFailed = true;
+    return false;
+  }
+}
+
+async function addTable() {
+  const numbers = tables.map(t => Number((t.name.match(/\d+/) || [0])[0]));
+  const n = (numbers.length ? Math.max(...numbers) : 0) + 1;
+  const name = prompt("Name of the new table:", `Table ${n}`);
+  if (!name || !name.trim()) return;
+  try {
+    await PosApi.insertTables([{ name: name.trim(), sort: Math.max(0, ...tables.map(t => t.sort || 0)) + 1 }]);
+  } catch (err) {
+    console.error("Failed to add table:", err);
+    return toast(`Couldn't add the table. ${describeError(err)}`, "error", 8000);
+  }
+  toast(`Added ${name.trim()} ✓`, "success");
+  await loadTables();
+}
+
+async function renameTable(id) {
+  const t = tables.find(x => x.id === id);
+  const name = t && prompt("Rename table:", t.name);
+  if (!name || !name.trim() || name.trim() === t.name) return;
+  try {
+    await PosApi.updateTable(id, { name: name.trim() });
+  } catch (err) {
+    console.error("Failed to rename table:", err);
+    return toast(`Couldn't rename the table. ${describeError(err)}`, "error", 8000);
+  }
+  await loadTables();
+}
+
+async function removeTable(id) {
+  const t = tables.find(x => x.id === id);
+  if (!t || tableOrderOf(id) || !confirm(`Remove ${t.name}?`)) return;
+  try {
+    await PosApi.deleteTable(id);
+  } catch (err) {
+    console.error("Failed to remove table:", err);
+    return toast(`Couldn't remove the table. ${describeError(err)}`, "error", 8000);
+  }
+  toast(`Removed ${t.name}`, "info");
+  await loadTables();
+}
+
+$("tablesGrid").addEventListener("click", e => {
+  const rename = e.target.closest("[data-rename]");
+  if (rename) return renameTable(rename.dataset.rename);
+  const del = e.target.closest("[data-delete-table]");
+  if (del) return removeTable(del.dataset.deleteTable);
+  if (e.target.closest("[data-counter]")) return openCounter();
+  if (e.target.closest("[data-add-table]")) return addTable();
+  const tile = e.target.closest("[data-table]");
+  if (tile) openTable(tile.dataset.table);
+});
+$("editTablesBtn").addEventListener("click", () => {
+  editingTables = !editingTables;
+  renderTables();
+});
+$("tablesPendingBtn").addEventListener("click", openPendingList);
+$("backToTablesBtn").addEventListener("click", backToTables);
+
 // ---------- Login ----------
 
 // Keys used before logins existed. Everything on a till then was Brewzy's,
@@ -2227,6 +2504,11 @@ function startSession(session) {
   document.title = `${vendor.name} · Brewzy POS`;
   document.body.classList.remove("logged-out");
   restoreOrders();
+  // A table's order left open on this till: save it, then keep only counter orders here.
+  orders.filter(o => o.tableId).forEach(o => saveTableOrder(o));
+  orders = orders.filter(o => !o.tableId);
+  if (!orders.length) orders.push(blankOrder(1));
+  if (!orders.some(o => o.id === activeOrderId)) activeOrderId = orders[0].id;
   cart = activeOrder().cart;
   $("cashReceived").value = activeOrder().cash || "";
   setPaymentMethod(activeOrder().paymentMethod || "Cash");
@@ -2236,6 +2518,9 @@ function startSession(session) {
   loadProducts().then(flushPending);    // refresh the menu, upload saved sales
   refreshPendingOrders();
   flushPaidPendingOrders();
+  tables = readStore(TABLES_CACHE_KEY, []);
+  showTables();
+  loadTables();
 }
 
 function showLogin(message = "") {
@@ -2285,6 +2570,7 @@ $("logoutBtn").addEventListener("click", async () => {
 
 renderEmojiPicks();
 setInterval(tickClock, 15000);
+setInterval(tickClockTables, 30000);
 setInterval(checkConnection, 30000);
 PosApi.getSession()
   .then(session => (session ? startSession(session) : showLogin()))

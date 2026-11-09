@@ -177,6 +177,32 @@ async function deleteExpense(id) {
   if (error) throw error;
 }
 
+// --- Tables (Table 1, Table 2, ...) ---
+async function fetchTables() {
+  const { data, error } = await supabaseClient
+    .from("dining_tables")
+    .select("*")
+    .order("sort", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertTables(rows) {
+  const { error } = await supabaseClient.from("dining_tables").insert(rows);
+  if (error) throw error;
+}
+
+async function updateTable(id, fields) {
+  const { error } = await supabaseClient.from("dining_tables").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteTable(id) {
+  const { error } = await supabaseClient.from("dining_tables").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // --- Named "pay later" orders, shared by every till ---
 async function fetchPendingOrders() {
   const { data, error } = await supabaseClient
@@ -216,5 +242,6 @@ window.PosApi = {
   fetchDiscardsForProduct, fetchDiscardsInRange, insertDiscard, updateDiscard, deleteDiscard,
   fetchExpensesInRange, insertExpense, updateExpense, deleteExpense,
   fetchPendingOrders, insertPendingOrder, updatePendingOrder, deletePendingOrder,
+  fetchTables, insertTables, updateTable, deleteTable,
   ping,
 };
