@@ -1,10 +1,8 @@
 -- Brewzy POS migration — vendor logins. Run once on an EXISTING database.
 --
--- BEFORE running this, create the Brewzy login:
---   Supabase dashboard -> Authentication -> Users -> Add user -> Create new user
---     Email:    brewzy@brewzy-pos.example.com
---     Password: (Brewzy's password)
---     Tick "Auto Confirm User"
+-- BEFORE running this, create the Brewzy login in the SQL Editor:
+--   1. run 2026-11-09-a-vendor-login-functions.sql
+--   2. run:  select create_vendor_login('brewzy', '<Brewzy''s password>');
 -- Then: SQL Editor -> New query -> paste this file -> Run.
 --
 -- What it does:
@@ -30,7 +28,7 @@ declare
 begin
   select id into brewzy from auth.users where email = 'brewzy@brewzy-pos.example.com';
   if brewzy is null then
-    raise exception 'Create the Brewzy login first: Authentication -> Users -> Add user (email brewzy@brewzy-pos.example.com, Auto Confirm User).';
+    raise exception 'Create the Brewzy login first: run 2026-11-09-a-vendor-login-functions.sql, then select create_vendor_login(''brewzy'', ''<password>'');';
   end if;
   update public.products       set owner = brewzy where owner is null;
   update public.sales          set owner = brewzy where owner is null;

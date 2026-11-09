@@ -116,6 +116,6 @@ create index if not exists discards_owner_idx       on public.discards (owner);
 create index if not exists expenses_owner_idx       on public.expenses (owner);
 create index if not exists pending_orders_owner_idx on public.pending_orders (owner);
 
--- Vendors are logins: Authentication -> Users -> Add user, email
--- <username>@brewzy-pos.example.com, "Auto Confirm User". They then add their
--- menu in the app (Manage Items).
+-- Vendors are logins: run migrations/2026-11-09-a-vendor-login-functions.sql,
+-- then  select create_vendor_login('<username>', '<password>');
+-- They log in with the user name and add their menu in the app (Manage Items).

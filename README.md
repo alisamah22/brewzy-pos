@@ -56,15 +56,19 @@ daily reports are shared across devices.
   discarded), what that stock would have sold for, and profit after discards, with a per-item table
 
 ## Vendor logins
-Each vendor is a Supabase Auth user. To add one: Supabase dashboard → **Authentication → Users → Add user →
-Create new user**, email `<username>@brewzy-pos.example.com` (e.g. `cafe2@brewzy-pos.example.com`), a password,
-and tick **Auto Confirm User**. They log in with the user name (`cafe2`) and start with an empty menu.
-Turn off public sign-ups (Authentication → Sign In / Providers → "Allow new users to sign up") so only users you
-add can log in. Expo dates (Expo days, test sales before opening) are set per vendor in `ALL_EXPOS` in `pos-core.js`.
+Vendors log in with a **user name and password**. Logins are made in the Supabase **SQL Editor** (after running
+[`2026-11-09-a-vendor-login-functions.sql`](supabase/migrations/2026-11-09-a-vendor-login-functions.sql) once):
+```sql
+select create_vendor_login('cafe2', 'their-password');   -- add a vendor (starts with an empty menu)
+select set_vendor_password('cafe2', 'new-password');      -- change a password
+```
+Behind the scenes Supabase stores the login as `<username>@brewzy-pos.example.com`; nobody receives mail there.
+Turn off public sign-ups (Authentication → Sign In / Providers → "Allow new users to sign up") so only logins you
+make can get in. Expo dates (Expo days, test sales before opening) are set per vendor in `ALL_EXPOS` in `pos-core.js`.
 
-**Upgrading an existing database to logins:** create the Brewzy user first (email
-`brewzy@brewzy-pos.example.com`), then run
-[`supabase/migrations/2026-11-09-vendor-logins.sql`](supabase/migrations/2026-11-09-vendor-logins.sql).
+**Upgrading an existing database to logins:** run `2026-11-09-a-vendor-login-functions.sql`, then
+`select create_vendor_login('brewzy', '<password>');`, then
+[`2026-11-09-vendor-logins.sql`](supabase/migrations/2026-11-09-vendor-logins.sql).
 All existing data becomes Brewzy's and the open (no login) access is removed.
 
 ## Supabase setup
