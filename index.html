@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=27" />
+  <link rel="stylesheet" href="styles.css?v=28" />
 </head>
 <body class="logged-out">
   <!-- Login: each vendor sees only their own menu, sales and reports -->
@@ -19,6 +19,22 @@
       <div class="login-error" id="loginError" role="alert" hidden></div>
       <button class="primary" id="loginBtn" type="submit">Log in</button>
     </form>
+  </div>
+
+  <!-- Super admin: every vendor and their staff -->
+  <div class="super-view" id="superView" hidden>
+    <header class="super-head">
+      <div>
+        <h1>🛡️ Super admin</h1>
+        <p>All vendors and their admins and cashiers. Logged in as <strong id="superName"></strong>.</p>
+      </div>
+      <div class="super-actions">
+        <button type="button" class="primary" id="newVendorBtn">＋ New vendor</button>
+        <button type="button" class="secondary" id="superLogoutBtn">Log out</button>
+      </div>
+    </header>
+    <div id="superNotice" class="notice" hidden></div>
+    <div id="superList" class="super-list"></div>
   </div>
 
   <div class="app">
@@ -499,9 +515,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=27"></script>
-<script src="supabase-api.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="pos-core.js?v=28"></script>
+<script src="supabase-api.js?v=28"></script>
+<script src="app.js?v=28"></script>
 
 </body>
 </html>

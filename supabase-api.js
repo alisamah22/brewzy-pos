@@ -242,6 +242,13 @@ const setStaffRole = (username, role) => rpc("set_staff_role", { username, role 
 const resetStaffPassword = (username, password) => rpc("reset_staff_password", { username, password });
 const removeStaff = (username) => rpc("remove_staff", { username });
 
+// --- Super admin: every vendor and their staff ---
+const superListLogins = () => rpc("super_list_logins");
+const superCreateVendor = (username, password) => rpc("super_create_vendor", { username, password });
+const superSetPassword = (username, password) => rpc("super_set_password", { username, password });
+const superSetRole = (username, role) => rpc("super_set_role", { username, role });
+const superRenameLogin = (oldUsername, newUsername) => rpc("super_rename_login", { old_username: oldUsername, new_username: newUsername });
+
 // --- Day close (cash / transfer / card counted against the system) ---
 async function fetchDayClosesInRange(fromKey, toKey) {
   const { data, error } = await supabaseClient
@@ -274,6 +281,7 @@ window.PosApi = {
   fetchPendingOrders, insertPendingOrder, updatePendingOrder, deletePendingOrder,
   fetchTables, insertTables, updateTable, deleteTable,
   whoami, listStaff, createStaff, setStaffRole, resetStaffPassword, removeStaff,
+  superListLogins, superCreateVendor, superSetPassword, superSetRole, superRenameLogin,
   fetchDayClosesInRange, saveDayClose,
   ping,
 };

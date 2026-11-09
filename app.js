@@ -2535,6 +2535,99 @@ $("staffList").addEventListener("click", e => {
   }
 });
 
+// ---------- Super admin: every vendor and their staff ----------
+
+function startSuper() {
+  document.body.classList.remove("logged-out");
+  document.body.classList.add("super-mode");
+  $("superView").hidden = false;
+  $("superName").textContent = vendor.user;
+  document.title = "Super admin · Brewzy POS";
+  renderSuper();
+}
+
+async function renderSuper() {
+  let rows = [];
+  const notice = $("superNotice");
+  try {
+    rows = await PosApi.superListLogins();
+    notice.hidden = true;
+  } catch (err) {
+    console.error("Failed to load logins:", err);
+    notice.hidden = false;
+    notice.innerHTML = `<div class="notice error">⚠️ Couldn't load the logins. ${escapeHtml(describeError(err))}</div>`;
+  }
+  const when = t => (t ? new Date(t).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never");
+  const actions = (r) => `
+    <div class="sv-actions">
+      ${r.kind === "super" ? "" : `<button type="button" class="small-btn" data-rename-login="${escapeHtml(r.username)}">✏️ Rename</button>`}
+      <button type="button" class="small-btn" data-password-login="${escapeHtml(r.username)}">🔑 Password</button>
+      ${r.kind === "staff" ? `<button type="button" class="small-btn" data-role-login="${escapeHtml(r.username)}" data-to="${r.role === "admin" ? "cashier" : "admin"}">Make ${r.role === "admin" ? "cashier" : "admin"}</button>` : ""}
+    </div>`;
+  const row = (r, cls, title, sub) => `
+    <div class="sv-row ${cls}">
+      <div><strong>${title}</strong><small>${sub} · last login ${escapeHtml(when(r.last_sign_in_at))}</small></div>
+      ${actions(r)}
+    </div>`;
+  const vendors = rows.filter(r => r.kind === "vendor");
+  const supers = rows.filter(r => r.kind === "super");
+  $("superList").innerHTML = vendors.map(v => {
+    const staff = rows.filter(r => r.kind === "staff" && r.vendor_username === v.username);
+    return `<div class="sv-vendor">
+      ${row(v, "main", `🏪 ${escapeHtml(v.username)}`, "Vendor · main admin login")}
+      ${staff.map(s => row(s, "staff", `${s.role === "admin" ? "⭐" : "🧑‍💼"} ${escapeHtml(s.username)}`, s.role === "admin" ? "Admin" : "Cashier")).join("")}
+      ${staff.length ? "" : `<div class="sv-row staff"><small>No staff yet (the vendor adds them in 👥 Staff).</small></div>`}
+    </div>`;
+  }).join("") + (supers.length ? `<div class="sv-vendor">
+      ${supers.map(s => row(s, "main", `🛡️ ${escapeHtml(s.username)}`, "Super admin")).join("")}
+    </div>` : "") + (rows.length ? "" : `<div class="empty-state small"><span>No logins found.</span></div>`);
+}
+
+async function superAction(fn, okText) {
+  try {
+    await fn();
+  } catch (err) {
+    console.error("Super admin change failed:", err);
+    const msg = String((err && err.message) || "");
+    toast(/taken|characters|only use|no login|only staff|must be|already/i.test(msg) ? msg : `Couldn't make the change. ${describeError(err)}`, "error", 8000);
+    return;
+  }
+  toast(okText, "success");
+  await renderSuper();
+}
+
+$("superList").addEventListener("click", e => {
+  const rn = e.target.closest("[data-rename-login]");
+  if (rn) {
+    const old = rn.dataset.renameLogin;
+    const name = prompt(`New user name for ${old}:`, old);
+    if (name && name.trim().toLowerCase() !== old) {
+      superAction(() => PosApi.superRenameLogin(old, name.trim().toLowerCase()), `${old} is now ${name.trim().toLowerCase()} ✓ (log in with the new name)`);
+    }
+    return;
+  }
+  const pw = e.target.closest("[data-password-login]");
+  if (pw) {
+    const password = prompt(`New password for ${pw.dataset.passwordLogin} (at least 6 characters):`);
+    if (password) superAction(() => PosApi.superSetPassword(pw.dataset.passwordLogin, password), `Password changed for ${pw.dataset.passwordLogin} ✓`);
+    return;
+  }
+  const role = e.target.closest("[data-role-login]");
+  if (role) superAction(() => PosApi.superSetRole(role.dataset.roleLogin, role.dataset.to), `${role.dataset.roleLogin} is now ${role.dataset.to} ✓`);
+});
+$("newVendorBtn").addEventListener("click", () => {
+  const username = (prompt("User name of the new vendor (e.g. cafe2):") || "").trim().toLowerCase();
+  if (!username) return;
+  const password = prompt(`Password for ${username} (at least 6 characters):`);
+  if (!password) return;
+  superAction(() => PosApi.superCreateVendor(username, password), `Vendor ${username} created ✓ They log in with that name and start with an empty menu.`);
+});
+$("superLogoutBtn").addEventListener("click", async () => {
+  if (!confirm("Log out of the super admin?")) return;
+  try { await PosApi.signOut(); } catch (err) { console.warn("Sign out:", err); }
+  location.reload();
+});
+
 // ---------- Tables ----------
 // The till opens on the Tables screen. Tapping a table opens its order; every
 // change is saved to the table's shared pending order, so all tills see the
@@ -2800,7 +2893,7 @@ async function resolveVendor(session) {
   try {
     const me = await PosApi.whoami();
     const name = me.vendor_username.charAt(0).toUpperCase() + me.vendor_username.slice(1);
-    return { id: me.vendor_id, username: me.vendor_username, name, role: me.role, user: me.username };
+    return { id: me.vendor_id, username: me.vendor_username, name, role: me.role, user: me.username, super: Boolean(me.super) };
   } catch (err) {
     console.warn("Couldn't read the login's role (staff migration not run yet?):", err);
     return { ...basic, role: "admin", user: basic.username };
@@ -2812,6 +2905,7 @@ const isAdmin = () => Boolean(vendor && vendor.role === "admin");
 // Load this vendor's data on this till and start the POS.
 async function startSession(session) {
   vendor = await resolveVendor(session);
+  if (vendor.super) return startSuper();
   document.body.classList.toggle("role-admin", isAdmin());
   document.body.classList.toggle("role-cashier", !isAdmin());
   setVendor(vendor.username);

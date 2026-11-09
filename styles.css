@@ -947,3 +947,21 @@ body.role-cashier [data-add-table], body.role-cashier [data-pending-delete], bod
   .cd-summary { grid-template-columns: 1fr 1fr 1fr; }
   .cd-box strong { font-size: 17px; }
 }
+
+/* ---------- Super admin ---------- */
+body.super-mode .app { display: none !important; }
+body.super-mode .super-view { display: block; }
+.super-view[hidden] { display: none !important; }
+.super-view { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+.super-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.super-head h1 { margin: 0; font-size: 26px; }
+.super-head p { margin: 4px 0 0; color: var(--muted); }
+.super-actions { display: flex; gap: 8px; }
+.super-list { display: grid; gap: 14px; }
+.sv-vendor { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 6px 14px; box-shadow: 0 1px 0 var(--line); }
+.sv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.sv-row:last-child { border-bottom: 0; }
+.sv-row.main strong { font-size: 18px; }
+.sv-row.staff { padding-left: 22px; }
+.sv-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.sv-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }

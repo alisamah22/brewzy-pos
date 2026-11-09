@@ -6,6 +6,9 @@ completed sales are stored in Supabase, so every till shares one menu and
 daily reports are shared across devices.
 
 ## Features
+- **Super admin:** a super admin login (e.g. *brew*) opens a 🛡️ Super admin screen listing every vendor with its
+  admins and cashiers; it can add vendors, rename any login, set passwords and change staff roles. It has no
+  shop of its own. Run `2026-11-09-d-super-admin.sql`, then `select make_super_admin('brew', '<password>');`
 - **Staff logins (admin / cashier):** a vendor's main login (e.g. *brewzy*) is an admin and adds staff in
   **👥 Staff**. Admins can do everything; cashiers can sell (tables, counter, pay later, the discount button) and
   close the day, but can't see reports or edit items, prices, tables, bills or staff. The database enforces it.
