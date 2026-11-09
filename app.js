@@ -7,7 +7,7 @@ const {
   discardError, stockSummary, aggregateDiscards,
   hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
   scopeSales, expenseError, sumExpenses, isTestSale, testModeUntil, expoPeriod,
-  toPendingItems, mergePendingItems, pendingSummary,
+  toPendingItems, mergePendingItems, pendingSummary, setVendor,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
@@ -20,10 +20,18 @@ const EMOJI_PICKS = ["🍔", "🌭", "🥪", "🍕", "🍟", "🥐", "🍩", "�
 
 const $ = (id) => document.getElementById(id);
 
+// The logged-in vendor ({ id, username, name }); null until login.
+let vendor = null;
+
+// Each vendor's data on a till is kept under their own keys.
+function storeKey(key) {
+  return vendor ? `${key}:${vendor.id}` : key;
+}
+
 // localStorage can throw (private mode, blocked storage) or hold bad JSON.
 function readStore(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(storeKey(key));
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
@@ -32,15 +40,15 @@ function readStore(key, fallback) {
 
 function writeStore(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(storeKey(key), JSON.stringify(value));
   } catch (err) {
     console.warn("Couldn't write to local storage:", err);
   }
 }
 
-let products = readStore(PRODUCTS_CACHE_KEY, []);
-let pendingSales = readStore(PENDING_SALES_KEY, []); // sales not yet uploaded
-let menuLoaded = products.length > 0;
+let products = []; // loaded for the vendor at login
+let pendingSales = []; // sales not yet uploaded
+let menuLoaded = false;
 let cart = []; // lines of the order on screen (the active open order)
 let activeCategory = "All";
 let paymentMethod = "Cash";
@@ -49,7 +57,7 @@ let saving = false;
 
 const report = {
   preset: "today",
-  scope: readStore(REPORT_SCOPE_KEY, "main") === "expo" ? "expo" : "main",
+  scope: "main", // remembered per vendor (set at login)
   allSales: [], // every sale in the range
   sales: [], // the Main or Expo part of each sale (see applyScope)
   bills: [],
@@ -198,6 +206,7 @@ async function flushPending() {
 }
 
 async function checkConnection() {
+  if (!vendor) return;
   refreshPendingOrders();
   flushPaidPendingOrders();
   if (pendingSales.length) return flushPending();
@@ -631,7 +640,7 @@ async function processPayment() {
 
 let pendingOrders = [];
 let pendingFailed = false;
-let pendingDeletes = readStore(PENDING_DELETES_KEY, []);
+let pendingDeletes = []; // set at login
 
 async function refreshPendingOrders() {
   try {
@@ -822,7 +831,7 @@ function showReceipt(sale, received, uploaded) {
     <div class="r-line r-change"><span>Change</span><strong>${money(received - sale.total)}</strong></div>` : "";
 
   $("receiptBody").innerHTML = `
-    <div class="r-head"><strong>Brewzy</strong><span>${escapeHtml(time)}</span></div>
+    <div class="r-head"><strong>${escapeHtml(vendor ? vendor.name : "Brewzy")}</strong><span>${escapeHtml(time)}</span></div>
     ${lines}
     <div class="r-line r-total"><span>Total</span><strong>${money(sale.total)}</strong></div>
     ${saved > 0 ? `<div class="r-line r-saved"><span>🏷️ You saved</span><strong>${money(saved)}</strong></div>` : ""}
@@ -1354,7 +1363,7 @@ async function loadReport() {
   });
   // The whole Expo's sales, for its totals against all prep bills.
   const period = expoPeriod();
-  const expoSalesRequest = PosApi.fetchSalesInRange(period.from, period.to).catch(err => {
+  const expoSalesRequest = (period ? PosApi.fetchSalesInRange(period.from, period.to) : Promise.resolve([])).catch(err => {
     console.error("Failed to load Expo sales:", err);
     return null;
   });
@@ -1384,7 +1393,7 @@ async function loadReport() {
   if (expoSales) {
     const expoIds = new Set(expoSales.map(s => s.id));
     report.expoSales = expoSales.concat(pendingSales.filter(s =>
-      s.sale_date >= period.from && s.sale_date <= period.to && !expoIds.has(s.id)));
+      period && s.sale_date >= period.from && s.sale_date <= period.to && !expoIds.has(s.id)));
   } else {
     report.expoSales = null;
   }
@@ -1703,6 +1712,11 @@ function renderProductTable(r) {
 // The whole Expo's sales against all its prep bills: the Expo's final profit.
 function renderExpoTotals() {
   const period = expoPeriod();
+  if (!period) {
+    $("expoPeriodText").textContent = "";
+    $("expoTotals").innerHTML = `<div class="empty-state small"><span>No Expo dates set for ${escapeHtml(vendor.name)}. Items in the Expo tab are still reported here.</span></div>`;
+    return;
+  }
   const fmt = key => formatDay(key, { day: "numeric", month: "short", year: "numeric" });
   $("expoPeriodText").textContent = `${fmt(period.from)} – ${fmt(period.to)} · all days together`;
   if (!report.expoSales) {
@@ -2177,19 +2191,101 @@ document.addEventListener("keydown", e => {
   }
 });
 
-window.addEventListener("online", () => { flushPending(); loadProducts(); });
+window.addEventListener("online", () => { if (vendor) { flushPending(); loadProducts(); } });
 window.addEventListener("offline", () => setOnline(false));
 
+// ---------- Login ----------
+
+// Keys used before logins existed. Everything on a till then was Brewzy's,
+// so it moves under Brewzy's login (offline sales, open orders, menu cache).
+const LEGACY_KEYS = [PRODUCTS_CACHE_KEY, PENDING_SALES_KEY, REPORT_SCOPE_KEY, OPEN_ORDERS_KEY, PENDING_DELETES_KEY];
+function adoptLegacyStore() {
+  if (vendor.username !== "brewzy") return;
+  try {
+    for (const key of LEGACY_KEYS) {
+      const old = localStorage.getItem(key);
+      if (old === null) continue;
+      if (localStorage.getItem(storeKey(key)) === null) localStorage.setItem(storeKey(key), old);
+      localStorage.removeItem(key);
+    }
+  } catch (err) {
+    console.warn("Couldn't move saved data to the Brewzy login:", err);
+  }
+}
+
+// Load this vendor's data on this till and start the POS.
+function startSession(session) {
+  vendor = PosApi.vendorOf(session);
+  setVendor(vendor.username);
+  adoptLegacyStore();
+  products = readStore(PRODUCTS_CACHE_KEY, []);
+  menuLoaded = products.length > 0;
+  pendingSales = readStore(PENDING_SALES_KEY, []);
+  pendingDeletes = readStore(PENDING_DELETES_KEY, []);
+  report.scope = readStore(REPORT_SCOPE_KEY, "main") === "expo" ? "expo" : "main";
+  $("vendorName").textContent = vendor.name;
+  document.title = `${vendor.name} · Brewzy POS`;
+  document.body.classList.remove("logged-out");
+  restoreOrders();
+  cart = activeOrder().cart;
+  $("cashReceived").value = activeOrder().cash || "";
+  setPaymentMethod(activeOrder().paymentMethod || "Cash");
+  tickClock();
+  renderStatus();
+  renderAll();                          // instant paint from cached menu (if any)
+  loadProducts().then(flushPending);    // refresh the menu, upload saved sales
+  refreshPendingOrders();
+  flushPaidPendingOrders();
+}
+
+function showLogin(message = "") {
+  document.body.classList.add("logged-out");
+  $("loginError").hidden = !message;
+  $("loginError").textContent = message;
+  $("loginUser").focus();
+}
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const username = $("loginUser").value.trim();
+  const password = $("loginPassword").value;
+  if (!username || !password) return showLogin("Please enter your user name and password.");
+  const btn = $("loginBtn");
+  btn.disabled = true;
+  btn.textContent = "Logging in…";
+  try {
+    const session = await PosApi.signIn(username, password);
+    $("loginPassword").value = "";
+    startSession(session);
+  } catch (err) {
+    console.error("Login failed:", err);
+    const msg = String((err && err.message) || "");
+    showLogin(/invalid login|invalid credentials|email not confirmed/i.test(msg)
+      ? "Wrong user name or password."
+      : "Couldn't reach the server. Check the internet connection and try again.");
+  }
+  btn.disabled = false;
+  btn.textContent = "Log in";
+});
+
+$("logoutBtn").addEventListener("click", async () => {
+  const notes = [];
+  if (pendingSales.length) notes.push(`${plural(pendingSales.length, "sale")} not uploaded yet will upload when ${vendor.name} logs in again on this device.`);
+  const open = orders.filter(o => o.cart.length).length;
+  if (open) notes.push(`${plural(open, "open order")} stay${open === 1 ? "s" : ""} saved on this device for ${vendor.name}.`);
+  if (!confirm(`Log out of ${vendor.name}?${notes.length ? `\n\n${notes.join("\n")}` : ""}`)) return;
+  saveOrders();
+  try {
+    await PosApi.signOut();
+  } catch (err) {
+    console.warn("Sign out:", err);
+  }
+  location.reload(); // start clean for the next login
+});
+
 renderEmojiPicks();
-tickClock();
 setInterval(tickClock, 15000);
 setInterval(checkConnection, 30000);
-restoreOrders();
-cart = activeOrder().cart;
-$("cashReceived").value = activeOrder().cash || "";
-setPaymentMethod(activeOrder().paymentMethod || "Cash");
-renderStatus();
-renderAll();                          // instant paint from cached menu (if any)
-loadProducts().then(flushPending);    // refresh the shared menu, upload saved sales
-refreshPendingOrders();
-flushPaidPendingOrders();
+PosApi.getSession()
+  .then(session => (session ? startSession(session) : showLogin()))
+  .catch(() => showLogin());

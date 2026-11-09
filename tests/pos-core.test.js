@@ -32,7 +32,10 @@ const {
   toPendingItems,
   mergePendingItems,
   pendingSummary,
+  setVendor,
 } = require("../pos-core.js");
+
+setVendor("brewzy"); // the Expo dates in these tests are Brewzy's
 
 test("money formats as MVR with two decimals and thousands separators", () => {
   assert.equal(money(20), "MVR 20.00");
@@ -422,4 +425,15 @@ test("pending (pay later) orders keep lines, merge repeat orders and total at me
   const menu = [{ id: "w", price: 60 }, { id: "b", price: 40, sale_price: 30 }];
   assert.deepEqual(pendingSummary(merged, menu), { count: 5, total: 180 + 30 + 40, missing: 0 });
   assert.deepEqual(pendingSummary([{ id: "gone", qty: 2 }], menu), { count: 0, total: 0, missing: 2 });
+});
+
+test("Expo dates belong to their vendor only", () => {
+  const sale = { sale_date: "2026-10-28", created_at: "2026-10-28T12:00:00Z" };
+  setVendor("someone-else");
+  assert.equal(isExpoSale(sale), false);
+  assert.equal(expoPeriod(), null);
+  assert.equal(testModeUntil(new Date("2026-10-25T09:00:00+05:00")), null);
+  setVendor("Brewzy");
+  assert.equal(isExpoSale(sale), true);
+  assert.deepEqual(expoPeriod(), { from: "2026-10-25", to: "2026-11-02" });
 });

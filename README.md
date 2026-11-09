@@ -6,6 +6,9 @@ completed sales are stored in Supabase, so every till shares one menu and
 daily reports are shared across devices.
 
 ## Features
+- **Vendor logins:** each vendor (e.g. **Brewzy**) logs in with a user name and password and sees only their
+  own menu, sales, Main/Expo reports, prep bills, discards and pay-later orders; the database enforces this.
+  Data saved on a till (offline sales, open orders) is kept per vendor. **👤 Name · Log out** is in the top bar
 - Touch-friendly menu with search, category filters, and an "in order" badge on each item
 - Shared menu stored in Supabase: add / edit / delete items from any till, each with a
   **stock (buying) price**, **selling price** and **stock quantity** (the form shows the profit per item as you type)
@@ -52,6 +55,18 @@ daily reports are shared across devices.
   difference between them, discarded quantity in the period, the discard loss (stock price × quantity
   discarded), what that stock would have sold for, and profit after discards, with a per-item table
 
+## Vendor logins
+Each vendor is a Supabase Auth user. To add one: Supabase dashboard → **Authentication → Users → Add user →
+Create new user**, email `<username>@brewzy-pos.example.com` (e.g. `cafe2@brewzy-pos.example.com`), a password,
+and tick **Auto Confirm User**. They log in with the user name (`cafe2`) and start with an empty menu.
+Turn off public sign-ups (Authentication → Sign In / Providers → "Allow new users to sign up") so only users you
+add can log in. Expo dates (Expo days, test sales before opening) are set per vendor in `ALL_EXPOS` in `pos-core.js`.
+
+**Upgrading an existing database to logins:** create the Brewzy user first (email
+`brewzy@brewzy-pos.example.com`), then run
+[`supabase/migrations/2026-11-09-vendor-logins.sql`](supabase/migrations/2026-11-09-vendor-logins.sql).
+All existing data becomes Brewzy's and the open (no login) access is removed.
+
 ## Supabase setup
 **New database:** open **SQL Editor → New query**, paste
 [`supabase/schema.sql`](supabase/schema.sql), and click **Run**. (Re-running the seed block
@@ -97,9 +112,9 @@ every 3 days to prevent this. GitHub turns off scheduled workflows in repos with
 for 60 days, so check the repo's **Actions** tab now and then.
 
 The Supabase URL and publishable (anon) key live in `supabase-api.js`. These are
-safe to expose in client code; row-level security governs access. Access is
-open (no login): anyone with the site URL can read the menu and sales, edit the menu,
-add sales, and void sales, but nobody can delete sales through the app.
+safe to expose in client code; row-level security governs access. Access needs a
+vendor login; each vendor can only read and change their own data, and nobody can delete
+or edit sales (they can only be voided).
 
 ## Run locally
 Use a small local server (needed so the browser can load Supabase):

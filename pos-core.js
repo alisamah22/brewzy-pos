@@ -88,14 +88,22 @@
   // every sale counts as Expo, whatever the items' category. Sales earlier
   // on the start day were test runs and are left out of every report total.
   // Add an entry here for each new Expo.
-  const EXPOS = [
-    { startDate: "2026-10-25", start: "2026-10-25T16:00:00+05:00", endDate: "2026-11-02" },
+  // Each Expo belongs to one vendor (their login name).
+  const ALL_EXPOS = [
+    { vendor: "brewzy", startDate: "2026-10-25", start: "2026-10-25T16:00:00+05:00", endDate: "2026-11-02" },
   ];
+  let EXPOS = [];
 
-  // First and last day of the latest Expo, for its whole-event totals.
+  // Use the Expos of the vendor that's logged in.
+  function setVendor(username) {
+    EXPOS = ALL_EXPOS.filter((e) => e.vendor === String(username || "").toLowerCase());
+  }
+
+  // First and last day of the vendor's latest Expo, for its whole-event
+  // totals; null when the vendor has no Expo dates.
   function expoPeriod() {
     const e = EXPOS[EXPOS.length - 1];
-    return { from: e.startDate, to: e.endDate };
+    return e ? { from: e.startDate, to: e.endDate } : null;
   }
 
   function saleTime(sale) {
@@ -484,7 +492,7 @@
     discardError, stockSummary, aggregateDiscards,
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
     scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil, expoPeriod,
-    toPendingItems, mergePendingItems, pendingSummary,
+    toPendingItems, mergePendingItems, pendingSummary, setVendor,
   };
 
   if (typeof module !== "undefined" && module.exports) {

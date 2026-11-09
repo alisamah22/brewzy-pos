@@ -1,4 +1,4 @@
--- Brewzy POS — tables + open (anon) RLS policies.
+-- Brewzy POS — tables + per-vendor (login) RLS policies.
 -- Run this once in the Supabase dashboard: SQL Editor -> New query -> Run.
 --
 -- Already have the tables from an earlier version? Don't re-run this file —
@@ -8,6 +8,7 @@
 -- Products (the shared menu)
 create table if not exists public.products (
   id         uuid primary key default gen_random_uuid(),
+  owner      uuid not null references auth.users(id) default auth.uid(),  -- the vendor's login
   created_at timestamptz not null default now(),
   name       text not null,
   price      numeric not null,            -- selling price
@@ -19,15 +20,12 @@ create table if not exists public.products (
 );
 
 alter table public.products enable row level security;
-create policy "anon read products"   on public.products for select to anon using (true);
-create policy "anon insert products" on public.products for insert to anon with check (true);
-create policy "anon update products" on public.products for update to anon using (true) with check (true);
-create policy "anon delete products" on public.products for delete to anon using (true);
 
 -- Sales. Rows are permanent: the app can add sales and mark them void, but
 -- cannot edit or delete them.
 create table if not exists public.sales (
   id             uuid primary key default gen_random_uuid(),
+  owner      uuid not null references auth.users(id) default auth.uid(),  -- the vendor's login
   created_at     timestamptz not null default now(),
   sale_date      date not null,
   payment_method text not null,
@@ -40,13 +38,10 @@ create table if not exists public.sales (
 );
 
 alter table public.sales enable row level security;
-create policy "anon read sales"   on public.sales for select to anon using (true);
-create policy "anon insert sales" on public.sales for insert to anon with check (true);
-create policy "anon void sales"   on public.sales for update to anon using (true) with check (true);
 
 -- Only the void columns may be updated; nothing may be deleted.
 revoke update, delete, truncate on public.sales from anon, authenticated;
-grant update (voided, voided_at) on public.sales to anon;
+grant update (voided, voided_at) on public.sales to authenticated;
 
 create index if not exists sales_sale_date_idx on public.sales (sale_date);
 
@@ -55,6 +50,7 @@ create index if not exists sales_sale_date_idx on public.sales (sale_date);
 -- don't rewrite past losses. Rows can be edited and deleted from the app.
 create table if not exists public.discards (
   id           uuid primary key default gen_random_uuid(),
+  owner      uuid not null references auth.users(id) default auth.uid(),  -- the vendor's login
   created_at   timestamptz not null default now(),
   product_id   uuid references public.products(id) on delete set null,
   product_name text not null,
@@ -65,10 +61,6 @@ create table if not exists public.discards (
 );
 
 alter table public.discards enable row level security;
-create policy "anon read discards"   on public.discards for select to anon using (true);
-create policy "anon insert discards" on public.discards for insert to anon with check (true);
-create policy "anon update discards" on public.discards for update to anon using (true) with check (true);
-create policy "anon delete discards" on public.discards for delete to anon using (true);
 
 create index if not exists discards_discard_date_idx on public.discards (discard_date);
 create index if not exists discards_product_id_idx on public.discards (product_id);
@@ -77,6 +69,7 @@ create index if not exists discards_product_id_idx on public.discards (product_i
 -- they belong to ('Expo' for now). Rows can be edited and deleted.
 create table if not exists public.expenses (
   id           uuid primary key default gen_random_uuid(),
+  owner      uuid not null references auth.users(id) default auth.uid(),  -- the vendor's login
   created_at   timestamptz not null default now(),
   expense_date date not null,
   description  text not null,
@@ -85,10 +78,6 @@ create table if not exists public.expenses (
 );
 
 alter table public.expenses enable row level security;
-create policy "anon read expenses"   on public.expenses for select to anon using (true);
-create policy "anon insert expenses" on public.expenses for insert to anon with check (true);
-create policy "anon update expenses" on public.expenses for update to anon using (true) with check (true);
-create policy "anon delete expenses" on public.expenses for delete to anon using (true);
 
 create index if not exists expenses_expense_date_idx on public.expenses (expense_date);
 
@@ -96,6 +85,7 @@ create index if not exists expenses_expense_date_idx on public.expenses (expense
 -- they're paid. "items" holds the lines: [{ id, name, qty, discounted }].
 create table if not exists public.pending_orders (
   id         uuid primary key default gen_random_uuid(),
+  owner      uuid not null references auth.users(id) default auth.uid(),  -- the vendor's login
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   name       text not null,
@@ -103,21 +93,29 @@ create table if not exists public.pending_orders (
 );
 
 alter table public.pending_orders enable row level security;
-create policy "anon read pending orders"   on public.pending_orders for select to anon using (true);
-create policy "anon insert pending orders" on public.pending_orders for insert to anon with check (true);
-create policy "anon update pending orders" on public.pending_orders for update to anon using (true) with check (true);
-create policy "anon delete pending orders" on public.pending_orders for delete to anon using (true);
 
--- Optional one-time seed of the starting menu.
--- Run this block ONCE; re-running it duplicates the items.
-insert into public.products (name, price, category, emoji) values
-  ('Submarine', 20, 'Kulhi', '🍔'),
-  ('Boava', 25, 'Kulhi', '🍔'),
-  ('Rihaakuru roshi', 12, 'Kulhi', '🍫'),
-  ('Brownie bits', 65, 'Desserts', '🍫'),
-  ('Brownie', 35, 'Desserts', '🍫'),
-  ('Cookie Bits', 50, 'Desserts', '🍫'),
-  ('Tres leches', 40, 'Desserts', '🍫'),
-  ('Sausage', 10, 'Kulhi', '🍔'),
-  ('Metaa gandu', 20, 'Desserts', '🍰'),
-  ('Ice Cream', 35, 'Desserts', '🍨');
+-- Each vendor reaches only their own rows (log in to the app first).
+create policy "own products" on public.products for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own sales read" on public.sales for select to authenticated
+  using (owner = auth.uid());
+create policy "own sales insert" on public.sales for insert to authenticated
+  with check (owner = auth.uid());
+create policy "own sales void" on public.sales for update to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own discards" on public.discards for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own expenses" on public.expenses for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+create policy "own pending orders" on public.pending_orders for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+
+create index if not exists products_owner_idx       on public.products (owner);
+create index if not exists sales_owner_date_idx     on public.sales (owner, sale_date);
+create index if not exists discards_owner_idx       on public.discards (owner);
+create index if not exists expenses_owner_idx       on public.expenses (owner);
+create index if not exists pending_orders_owner_idx on public.pending_orders (owner);
+
+-- Vendors are logins: Authentication -> Users -> Add user, email
+-- <username>@brewzy-pos.example.com, "Auto Confirm User". They then add their
+-- menu in the app (Manage Items).

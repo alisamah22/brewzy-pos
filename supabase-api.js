@@ -5,6 +5,38 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Xou20b2C_H--LCbqEw11A_DDLvtqNQ
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
+// --- Logins (Supabase Auth). A vendor signs in with a user name, which is
+// the part before the @ of their login email. ---
+const LOGIN_EMAIL_DOMAIN = "brewzy-pos.example.com";
+
+function loginEmail(username) {
+  const u = String(username || "").trim().toLowerCase();
+  return u.includes("@") ? u : `${u}@${LOGIN_EMAIL_DOMAIN}`;
+}
+
+async function signIn(username, password) {
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email: loginEmail(username), password });
+  if (error) throw error;
+  return data.session;
+}
+
+async function getSession() {
+  const { data } = await supabaseClient.auth.getSession();
+  return data.session || null;
+}
+
+async function signOut() {
+  await supabaseClient.auth.signOut({ scope: "local" });
+}
+
+// { id, username, name } of the logged-in vendor.
+function vendorOf(session) {
+  const email = (session.user && session.user.email) || "";
+  const username = email.endsWith(`@${LOGIN_EMAIL_DOMAIN}`) ? email.split("@")[0] : email;
+  const name = username.charAt(0).toUpperCase() + username.slice(1);
+  return { id: session.user.id, username, name };
+}
+
 // Supabase returns at most 1000 rows per request, so page through results.
 const PAGE_SIZE = 1000;
 
@@ -178,6 +210,7 @@ async function ping() {
 }
 
 window.PosApi = {
+  signIn, getSession, signOut, vendorOf,
   fetchProducts, insertProduct, updateProduct, deleteProduct,
   insertSale, fetchSalesInRange, setSaleVoided,
   fetchDiscardsForProduct, fetchDiscardsInRange, insertDiscard, updateDiscard, deleteDiscard,
