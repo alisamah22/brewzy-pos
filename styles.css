@@ -895,3 +895,55 @@ body.tables-mode .tables-view { display: block; }
   .table-tile { min-height: 110px; }
   .tables-actions { margin-left: 0; width: 100%; }
 }
+
+/* ---------- Roles ---------- */
+body.role-cashier #salesReportBtn, body.role-cashier #manageItemsBtn, body.role-cashier #editTablesBtn,
+body.role-cashier [data-add-table], body.role-cashier [data-pending-delete], body:not(.role-admin) .admin-only { display: none !important; }
+
+/* ---------- Staff ---------- */
+.staff-add { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-soft); }
+.role-pick { margin-top: 2px; }
+.role-pick button { font-size: 14px; padding: 9px 14px; }
+.staff-list { margin-top: 14px; display: grid; gap: 8px; }
+.staff-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.staff-row strong { display: block; }
+.staff-row small { color: var(--muted); }
+.staff-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* ---------- Close day ---------- */
+.close-day .close-date { display: inline-flex; gap: 8px; align-items: center; font-weight: 800; font-size: 13px; margin-top: 12px; }
+.close-day .close-date input { width: 170px; }
+.cd-summary { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; background: var(--panel); padding: 4px 0; }
+.cd-box { border-radius: 14px; padding: 12px 14px; background: var(--panel-soft); border: 1px solid var(--line); }
+.cd-box span { display: block; font-size: 12px; color: var(--muted); }
+.cd-box strong { font-size: 22px; display: block; }
+.cd-box.ok { background: var(--good-soft); border-color: transparent; }
+.cd-box.ok strong, .cd-box.ok span { color: var(--good); }
+.cd-box.short { background: var(--danger-soft); border-color: transparent; }
+.cd-box.short strong, .cd-box.short span { color: var(--danger); }
+.cd-box.over { background: var(--warn-soft); border-color: transparent; }
+.cd-box.over strong, .cd-box.over span { color: var(--warn); }
+.cd-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; }
+.cd-grid h3 { margin: 4px 0 10px; font-size: 16px; }
+.cash-rows { display: grid; gap: 6px; }
+.cash-row { display: grid; grid-template-columns: 76px 44px 72px 44px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.cash-chip { height: 40px; border-radius: 8px; display: grid; place-items: center; font-weight: 900; color: white; background: #2e7d4f; font-size: 15px; }
+.cash-chip.coin { border-radius: 50%; width: 44px; height: 44px; background: #9aa3ab; justify-self: center; font-size: 13px; }
+.cash-row .step { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--good-soft); color: var(--good); font-size: 22px; font-weight: 900; }
+.cash-row input { text-align: center; font-size: 18px; font-weight: 800; padding: 8px 4px; }
+.cash-row .line { text-align: right; font-weight: 800; }
+.cash-small { display: block; margin: 12px 0 6px; font-size: 12px; font-weight: 800; }
+.cash-small input { margin-top: 6px; font-size: 16px; }
+.cd-check { border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 14px; display: grid; gap: 8px; }
+.cd-check .row { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.cd-check label { font-size: 12px; font-weight: 800; }
+.cd-check input { margin-top: 4px; font-size: 16px; }
+.cd-check .diff { font-weight: 800; font-size: 14px; }
+.cd-check .diff.ok { color: var(--good); } .cd-check .diff.short { color: var(--danger); } .cd-check .diff.over { color: var(--warn); }
+.cd-note { display: block; font-size: 12px; font-weight: 800; }
+.cd-note textarea { width: 100%; margin-top: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; font: inherit; }
+@media (max-width: 760px) {
+  .cd-grid { grid-template-columns: 1fr; }
+  .cd-summary { grid-template-columns: 1fr 1fr 1fr; }
+  .cd-box strong { font-size: 17px; }
+}

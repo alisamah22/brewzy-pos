@@ -229,6 +229,36 @@ async function deletePendingOrder(id) {
   if (error) throw error;
 }
 
+// --- Who's logged in, and staff (admin / cashier) ---
+async function rpc(name, args) {
+  const { data, error } = await supabaseClient.rpc(name, args);
+  if (error) throw error;
+  return data;
+}
+const whoami = () => rpc("whoami");
+const listStaff = () => rpc("list_staff");
+const createStaff = (username, password, role) => rpc("create_staff", { username, password, role });
+const setStaffRole = (username, role) => rpc("set_staff_role", { username, role });
+const resetStaffPassword = (username, password) => rpc("reset_staff_password", { username, password });
+const removeStaff = (username) => rpc("remove_staff", { username });
+
+// --- Day close (cash / transfer / card counted against the system) ---
+async function fetchDayClosesInRange(fromKey, toKey) {
+  const { data, error } = await supabaseClient
+    .from("day_closes")
+    .select("*")
+    .gte("close_date", fromKey)
+    .lte("close_date", toKey)
+    .order("close_date", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function saveDayClose(row) {
+  const { error } = await supabaseClient.from("day_closes").upsert(row, { onConflict: "owner,close_date" });
+  if (error) throw error;
+}
+
 // Cheap query used to check the database is reachable.
 async function ping() {
   const { error } = await supabaseClient.from("products").select("id").limit(1);
@@ -243,5 +273,7 @@ window.PosApi = {
   fetchExpensesInRange, insertExpense, updateExpense, deleteExpense,
   fetchPendingOrders, insertPendingOrder, updatePendingOrder, deletePendingOrder,
   fetchTables, insertTables, updateTable, deleteTable,
+  whoami, listStaff, createStaff, setStaffRole, resetStaffPassword, removeStaff,
+  fetchDayClosesInRange, saveDayClose,
   ping,
 };

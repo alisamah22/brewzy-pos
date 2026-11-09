@@ -198,6 +198,28 @@
     return { count, total: round2(total), missing };
   }
 
+  // Maldivian rufiyaa notes and coins for the day-close cash count.
+  const CASH_DENOMINATIONS = [
+    { value: 1000, kind: "note" }, { value: 500, kind: "note" }, { value: 100, kind: "note" },
+    { value: 50, kind: "note" }, { value: 20, kind: "note" }, { value: 10, kind: "note" },
+    { value: 5, kind: "note" }, { value: 2, kind: "coin" }, { value: 1, kind: "coin" },
+  ];
+
+  // Total of a cash count: { "1000": 2, "50": 3, ... } plus loose change in MVR.
+  function cashCountTotal(counts, small = 0) {
+    let total = Number(small) || 0;
+    for (const d of CASH_DENOMINATIONS) total += d.value * (Math.max(0, Math.floor(Number(counts[d.value]) || 0)));
+    return round2(total);
+  }
+
+  // What the system expects for a day: non-voided, non-test sales by payment method.
+  function dayExpected(sales) {
+    const counted = sales.filter((s) => !s.voided && !isTestSale(s));
+    const totals = { Cash: 0, Transfer: 0, Card: 0 };
+    for (const s of counted) totals[s.payment_method] = round2((totals[s.payment_method] || 0) + Number(s.total || 0));
+    return { ...totals, count: counted.length };
+  }
+
   function calcTotals(cart) {
     const subtotal = round2(cart.reduce((sum, item) => sum + item.price * item.qty, 0));
     return { subtotal, tax: 0, total: subtotal };
@@ -493,6 +515,7 @@
     hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
     scopeSales, expenseError, sumExpenses, isExpoSale, isTestSale, testModeUntil, expoPeriod,
     toPendingItems, mergePendingItems, pendingSummary, setVendor,
+    CASH_DENOMINATIONS, cashCountTotal, dayExpected,
   };
 
   if (typeof module !== "undefined" && module.exports) {

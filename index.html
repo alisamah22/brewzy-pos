@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=26" />
+  <link rel="stylesheet" href="styles.css?v=27" />
 </head>
 <body class="logged-out">
   <!-- Login: each vendor sees only their own menu, sales and reports -->
@@ -32,6 +32,8 @@
       </div>
       <div class="topbar-actions">
         <span id="syncStatus" class="status-pill" role="status" aria-live="polite">Connecting…</span>
+        <button class="secondary" id="closeDayBtn" type="button">🧾 <span>Close day</span></button>
+        <button class="secondary admin-only" id="staffBtn" type="button">👥 <span>Staff</span></button>
         <button class="secondary vendor-chip" id="logoutBtn" type="button" title="Log out">👤 <span id="vendorName"></span> · Log out</button>
         <button class="secondary" id="salesReportBtn">📊 <span>Reports</span></button>
         <button class="secondary" id="manageItemsBtn">🍽️ <span>Manage Items</span></button>
@@ -261,6 +263,67 @@
     </div>
   </dialog>
 
+  <!-- Staff (admin only) -->
+  <dialog id="staffDialog">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h2>👥 Staff</h2>
+          <p><strong>Admin</strong>: everything. <strong>Cashier</strong>: sell, tables, discount button and close the day; no reports or item editing.</p>
+        </div>
+        <button type="button" class="icon-btn" id="closeStaffBtn" aria-label="Close">✕</button>
+      </div>
+      <div class="staff-add">
+        <div class="form-title">Add a staff login</div>
+        <div class="form-grid">
+          <label>User name <input id="staffUser" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+          <label>Password <input id="staffPassword" type="text" autocomplete="off" placeholder="At least 6 characters" /></label>
+        </div>
+        <div class="segmented role-pick" id="staffRole" role="radiogroup" aria-label="Role">
+          <button type="button" data-role="cashier" class="active">🧑‍💼 Cashier</button>
+          <button type="button" data-role="admin">⭐ Admin</button>
+        </div>
+        <div class="modal-actions"><button type="button" class="primary" id="addStaffBtn">Add staff</button></div>
+      </div>
+      <div id="staffNotice" class="notice" hidden></div>
+      <div id="staffList" class="staff-list"></div>
+    </div>
+  </dialog>
+
+  <!-- Close day: count the cash, check transfer and card -->
+  <dialog id="closeDayDialog" class="wide">
+    <div class="modal close-day">
+      <div class="modal-header">
+        <div>
+          <h2>🧾 Close day</h2>
+          <p id="closeDayInfo">Count the cash and check transfer and card against the system.</p>
+        </div>
+        <button type="button" class="icon-btn" id="closeCloseDayBtn" aria-label="Close">✕</button>
+      </div>
+      <label class="close-date">Day <input id="closeDate" type="date" /></label>
+      <div class="cd-summary" id="cdSummary"></div>
+      <div class="cd-grid">
+        <section>
+          <h3>💵 Count the cash</h3>
+          <div class="cash-rows" id="cashRows"></div>
+          <label class="cash-small">Laari / loose change (MVR) <input id="cashSmall" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" /></label>
+          <button type="button" class="danger-text" id="clearCountBtn">Clear count</button>
+        </section>
+        <section>
+          <h3>📱 Transfer</h3>
+          <div class="cd-check" id="transferCheck"></div>
+          <h3>💳 Card</h3>
+          <div class="cd-check" id="cardCheck"></div>
+          <label class="cd-note">Note <textarea id="closeNote" rows="2" placeholder="Anything to remember (optional)"></textarea></label>
+        </section>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="cancelCloseDayBtn">Cancel</button>
+        <button type="button" class="primary" id="saveCloseDayBtn">Save day close</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Receipt -->
   <dialog id="receiptDialog">
     <div class="modal receipt-modal">
@@ -416,6 +479,16 @@
         </div>
       </section>
 
+      <section class="report-section" id="dayClosesSection">
+        <div class="section-head"><h3>🧾 Day closes</h3><span class="muted">Counted against the system for the dates above</span></div>
+        <div class="report-table-wrap">
+          <table class="report-table">
+            <thead><tr><th>Day</th><th>Cash counted</th><th>Cash expected</th><th>Cash difference</th><th>Transfer difference</th><th>Card difference</th><th>Closed by</th></tr></thead>
+            <tbody id="dayClosesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="report-section">
         <div class="section-head"><h3>🧾 Transactions</h3><span class="muted">Void a sale entered by mistake — it stays on record</span></div>
         <div id="transactionList" class="transaction-list"></div>
@@ -426,9 +499,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=26"></script>
-<script src="supabase-api.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="pos-core.js?v=27"></script>
+<script src="supabase-api.js?v=27"></script>
+<script src="app.js?v=27"></script>
 
 </body>
 </html>

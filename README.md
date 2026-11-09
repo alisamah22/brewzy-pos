@@ -6,6 +6,13 @@ completed sales are stored in Supabase, so every till shares one menu and
 daily reports are shared across devices.
 
 ## Features
+- **Staff logins (admin / cashier):** a vendor's main login (e.g. *brewzy*) is an admin and adds staff in
+  **👥 Staff**. Admins can do everything; cashiers can sell (tables, counter, pay later, the discount button) and
+  close the day, but can't see reports or edit items, prices, tables, bills or staff. The database enforces it.
+  Needs `2026-11-09-c-staff-and-day-close.sql`
+- **Close day:** **🧾 Close day** counts the cash note by note (MVR 1000 … 1, plus loose change) against the
+  day's cash sales and checks transfer and card against the system; shows ✓ Matches / Short by / Over by.
+  Saved per day (saving again updates it); admins see the day closes in Reports
 - **Tables:** the till opens on a Tables screen (Table 1–5 to start; **＋ Add table**, **✏️ Edit tables** to
   rename/remove). Tap a table to open its order: every change is saved and shared by all tills, the table
   shows as occupied (total, items, time open) until paid, then it's free again. **🥡 Counter / Takeaway** is

@@ -8,6 +8,7 @@ const {
   hasDiscount, sellingPrice, discountPercent, priceAfterPercentOff, tracksStock,
   scopeSales, expenseError, sumExpenses, isTestSale, testModeUntil, expoPeriod,
   toPendingItems, mergePendingItems, pendingSummary, setVendor,
+  CASH_DENOMINATIONS, cashCountTotal, dayExpected,
 } = PosCore;
 
 const PRODUCTS_CACHE_KEY = "touchPosProducts";
@@ -104,11 +105,13 @@ function isNetworkError(err) {
 
 function describeError(err) {
   const msg = String((err && (err.message || err.details)) || "");
-  if ((/column/i.test(msg) && /cost|voided|stock_qty|sale_price/i.test(msg)) || /discards|expenses|pending_orders|dining_tables|table_id/i.test(msg)) {
+  if ((/column/i.test(msg) && /cost|voided|stock_qty|sale_price/i.test(msg)) || /discards|expenses|pending_orders|dining_tables|table_id|day_closes|whoami|my_vendor/i.test(msg)) {
     return "The database needs a one-time update: run the migration SQL from the README.";
   }
-  if (/permission denied|row-level security/i.test(msg)) {
-    return "The database refused this change. Run the latest migration SQL from the README.";
+  if (/permission denied|row-level security|only an admin/i.test(msg)) {
+    return vendor && vendor.role === "cashier"
+      ? "Only an admin can do this."
+      : "The database refused this change. Run the latest migration SQL from the README.";
   }
   return "Couldn't reach the database. Check the internet connection and try again.";
 }
@@ -824,6 +827,7 @@ function openPendingOrder(id) {
 }
 
 async function deletePendingEntry(id) {
+  if (!isAdmin()) return;
   const p = pendingOrders.find(x => x.id === id);
   if (!p || !confirm(`Delete ${p.name}'s pending order? It hasn't been paid.`)) return;
   try {
@@ -872,6 +876,7 @@ function showReceipt(sale, received, uploaded) {
 // ---------- Manage items ----------
 
 function openManageItems() {
+  if (!isAdmin()) return;
   resetItemForm(false);
   $("manageSearch").value = "";
   renderManageList();
@@ -1297,6 +1302,7 @@ function formatDay(key, opts = { weekday: "short", day: "numeric", month: "short
 }
 
 function openSalesReport() {
+  if (!isAdmin()) return;
   report.showAllTransactions = false;
   markScope();
   resetBillForm();
@@ -1488,6 +1494,8 @@ function renderReport() {
   } else {
     renderStockReport(r);
   }
+  $("dayClosesSection").hidden = expo;
+  if (!expo) loadDayCloses(from, to);
   renderTransactions();
 }
 
@@ -2232,6 +2240,301 @@ document.addEventListener("keydown", e => {
 window.addEventListener("online", () => { if (vendor) { flushPending(); loadProducts(); } });
 window.addEventListener("offline", () => setOnline(false));
 
+// ---------- Day closes in the report ----------
+
+async function loadDayCloses(from, to) {
+  let rows = [];
+  let failed = "";
+  try {
+    rows = await PosApi.fetchDayClosesInRange(from, to);
+  } catch (err) {
+    console.error("Failed to load day closes:", err);
+    failed = describeError(err);
+  }
+  const diff = (counted, expected) => {
+    const d = PosCore.round2(Number(counted) - Number(expected));
+    return `<span class="${d < 0 ? "loss-text" : ""}">${d === 0 ? "✓ 0.00" : signedMoney(d)}</span>`;
+  };
+  $("dayClosesBody").innerHTML = failed
+    ? `<tr><td colspan="7" class="report-empty">⚠️ ${escapeHtml(failed)}</td></tr>`
+    : rows.length ? rows.map(c => `
+      <tr>
+        <td>${escapeHtml(formatDay(c.close_date, { weekday: "short", day: "numeric", month: "short" }))}</td>
+        <td>${money(c.cash_counted)}</td>
+        <td>${money(c.cash_expected)}</td>
+        <td>${diff(c.cash_counted, c.cash_expected)}</td>
+        <td>${diff(c.transfer_counted, c.transfer_expected)}</td>
+        <td>${diff(c.card_counted, c.card_expected)}</td>
+        <td>${escapeHtml(c.closed_by || "")}${c.note ? ` <span class="muted" title="${escapeHtml(c.note)}">📝</span>` : ""}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="7" class="report-empty">No day closed in these dates.</td></tr>`;
+}
+
+// ---------- Close day: count the cash, check transfer and card ----------
+
+const closeDay = { date: "", expected: { Cash: 0, Transfer: 0, Card: 0, count: 0 }, counts: {}, existing: null };
+
+function openCloseDay() {
+  $("closeDate").value = localDateKey();
+  $("closeDayDialog").showModal();
+  loadCloseDay();
+}
+
+async function loadCloseDay() {
+  const date = $("closeDate").value || localDateKey();
+  closeDay.date = date;
+  $("closeDayInfo").textContent = "Loading the day's sales…";
+  let sales = [];
+  let existing = null;
+  try {
+    sales = await PosApi.fetchSalesInRange(date, date);
+    const closes = await PosApi.fetchDayClosesInRange(date, date).catch(() => []);
+    existing = closes[0] || null;
+  } catch (err) {
+    console.error("Failed to load the day:", err);
+    $("closeDayInfo").textContent = `⚠️ Couldn't load the day's sales. ${describeError(err)}`;
+  }
+  const ids = new Set(sales.map(s => s.id));
+  sales = sales.concat(pendingSales.filter(s => s.sale_date === date && !ids.has(s.id)));
+  closeDay.expected = dayExpected(sales);
+  closeDay.existing = existing;
+  closeDay.counts = existing ? { ...(existing.cash_breakdown.counts || {}) } : {};
+  $("cashSmall").value = existing && existing.cash_breakdown.small ? existing.cash_breakdown.small : "";
+  $("closeNote").value = existing ? existing.note || "" : "";
+  if (sales.length || !$("closeDayInfo").textContent.startsWith("⚠️")) {
+    $("closeDayInfo").textContent = `${plural(closeDay.expected.count, "sale")} on ${formatDay(date, { weekday: "long", day: "numeric", month: "long" })}.` +
+      (existing ? ` Already closed by ${existing.closed_by || "someone"} at ${new Date(existing.updated_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}: saving again updates it.` : "");
+  }
+  renderCashRows();
+  renderChecks(existing);
+  renderCloseSummary();
+}
+
+function renderCashRows() {
+  $("cashRows").innerHTML = CASH_DENOMINATIONS.map(d => {
+    const n = Number(closeDay.counts[d.value]) || 0;
+    return `
+    <div class="cash-row" data-value="${d.value}">
+      <span class="cash-chip ${d.kind}">${d.value}</span>
+      <button type="button" class="step" data-step="-1" aria-label="One less ${d.value}">−</button>
+      <input type="number" inputmode="numeric" min="0" step="1" value="${n || ""}" placeholder="0" aria-label="Number of ${d.value} ${d.kind}s" />
+      <button type="button" class="step" data-step="1" aria-label="One more ${d.value}">＋</button>
+      <span class="line">${money(d.value * n)}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderChecks(existing) {
+  const check = (method, label) => {
+    const expected = closeDay.expected[method];
+    const counted = existing ? existing[`${method.toLowerCase()}_counted`] : "";
+    return `
+      <div class="row"><span>System (${label} sales)</span><strong>${money(expected)}</strong></div>
+      <label>${label} received <input type="number" inputmode="decimal" min="0" step="0.01" data-method="${method}" value="${counted === "" ? "" : counted}" placeholder="${expected.toFixed(2)}" /></label>
+      <button type="button" class="secondary" data-match="${method}">✓ Matches the system</button>
+      <span class="diff" data-diff="${method}"></span>`;
+  };
+  $("transferCheck").innerHTML = check("Transfer", "Transfer");
+  $("cardCheck").innerHTML = check("Card", "Card");
+  updateChecks();
+}
+
+function counted(method) {
+  if (method === "Cash") return cashCountTotal(closeDay.counts, $("cashSmall").value);
+  const input = document.querySelector(`#closeDayDialog input[data-method="${method}"]`);
+  return input && input.value !== "" ? Number(input.value) : null;
+}
+
+function diffLabel(d) {
+  if (Math.abs(d) < 0.005) return ["ok", "✓ Matches"];
+  return d < 0 ? ["short", `Short by ${money(-d)}`] : ["over", `Over by ${money(d)}`];
+}
+
+function updateChecks() {
+  for (const method of ["Transfer", "Card"]) {
+    const el = document.querySelector(`[data-diff="${method}"]`);
+    const c = counted(method);
+    if (!el) continue;
+    if (c === null) { el.className = "diff"; el.textContent = "Type what you received, or tap ✓ if it matches."; continue; }
+    const [cls, text] = diffLabel(PosCore.round2(c - closeDay.expected[method]));
+    el.className = `diff ${cls}`;
+    el.textContent = text;
+  }
+}
+
+function renderCloseSummary() {
+  const cash = counted("Cash");
+  const expected = closeDay.expected.Cash;
+  const [cls, text] = diffLabel(PosCore.round2(cash - expected));
+  $("cdSummary").innerHTML = `
+    <div class="cd-box"><span>Cash counted</span><strong>${money(cash)}</strong></div>
+    <div class="cd-box"><span>Cash sales (system)</span><strong>${money(expected)}</strong></div>
+    <div class="cd-box ${cls}"><span>Difference</span><strong>${text}</strong></div>`;
+}
+
+async function saveCloseDay() {
+  const transfer = counted("Transfer");
+  const card = counted("Card");
+  if (transfer === null || card === null) {
+    toast("Please enter the transfer and card amounts received (or tap ✓ Matches the system).", "error", 5000);
+    return;
+  }
+  const now = new Date().toISOString();
+  const row = {
+    owner: vendor.id,
+    close_date: closeDay.date,
+    closed_by: vendor.user || vendor.username,
+    updated_at: now,
+    cash_expected: closeDay.expected.Cash,
+    cash_counted: counted("Cash"),
+    cash_breakdown: { counts: closeDay.counts, small: Number($("cashSmall").value) || 0 },
+    transfer_expected: closeDay.expected.Transfer,
+    transfer_counted: transfer,
+    card_expected: closeDay.expected.Card,
+    card_counted: card,
+    note: $("closeNote").value.trim() || null,
+  };
+  const btn = $("saveCloseDayBtn");
+  btn.disabled = true;
+  try {
+    await PosApi.saveDayClose(row);
+  } catch (err) {
+    console.error("Failed to save the day close:", err);
+    toast(`Couldn't save the day close. ${describeError(err)}`, "error", 8000);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  $("closeDayDialog").close();
+  const [, cashText] = diffLabel(PosCore.round2(row.cash_counted - row.cash_expected));
+  toast(`Day closed ✓ Cash: ${cashText}`, "success", 6000);
+}
+
+$("closeDayBtn").addEventListener("click", openCloseDay);
+$("closeCloseDayBtn").addEventListener("click", () => $("closeDayDialog").close());
+$("cancelCloseDayBtn").addEventListener("click", () => $("closeDayDialog").close());
+$("saveCloseDayBtn").addEventListener("click", saveCloseDay);
+$("closeDate").addEventListener("change", loadCloseDay);
+$("cashRows").addEventListener("click", e => {
+  const step = e.target.closest("[data-step]");
+  if (!step) return;
+  const value = step.closest("[data-value]").dataset.value;
+  closeDay.counts[value] = Math.max(0, (Number(closeDay.counts[value]) || 0) + Number(step.dataset.step));
+  const row = step.closest(".cash-row");
+  row.querySelector("input").value = closeDay.counts[value] || "";
+  row.querySelector(".line").textContent = money(Number(value) * closeDay.counts[value]);
+  renderCloseSummary();
+});
+$("cashRows").addEventListener("input", e => {
+  const row = e.target.closest("[data-value]");
+  if (!row) return;
+  const value = row.dataset.value;
+  closeDay.counts[value] = Math.max(0, Math.floor(Number(e.target.value) || 0));
+  row.querySelector(".line").textContent = money(Number(value) * closeDay.counts[value]);
+  renderCloseSummary();
+});
+$("cashSmall").addEventListener("input", renderCloseSummary);
+$("clearCountBtn").addEventListener("click", () => {
+  closeDay.counts = {};
+  $("cashSmall").value = "";
+  renderCashRows();
+  renderCloseSummary();
+});
+$("closeDayDialog").addEventListener("input", e => {
+  if (e.target.matches("input[data-method]")) updateChecks();
+});
+$("closeDayDialog").addEventListener("click", e => {
+  const match = e.target.closest("[data-match]");
+  if (!match) return;
+  const method = match.dataset.match;
+  document.querySelector(`#closeDayDialog input[data-method="${method}"]`).value = closeDay.expected[method].toFixed(2);
+  updateChecks();
+});
+
+// ---------- Staff (admin only) ----------
+
+let staffRole = "cashier";
+
+async function openStaff() {
+  if (!isAdmin()) return;
+  $("staffUser").value = `${vendor.username}.`;
+  $("staffPassword").value = "";
+  $("staffDialog").showModal();
+  await renderStaff();
+}
+
+async function renderStaff() {
+  const notice = $("staffNotice");
+  let rows = [];
+  try {
+    rows = await PosApi.listStaff();
+    notice.hidden = true;
+  } catch (err) {
+    console.error("Failed to load staff:", err);
+    notice.hidden = false;
+    notice.innerHTML = `<div class="notice error">⚠️ Couldn't load staff. ${escapeHtml(describeError(err))}</div>`;
+  }
+  $("staffList").innerHTML = rows.length ? rows.map(s => `
+    <div class="staff-row">
+      <div>
+        <strong>${s.role === "admin" ? "⭐" : "🧑‍💼"} ${escapeHtml(s.username)}</strong>
+        <small>${s.role === "admin" ? "Admin" : "Cashier"}</small>
+      </div>
+      <div class="staff-actions">
+        <button type="button" class="small-btn" data-staff-role="${escapeHtml(s.username)}" data-to="${s.role === "admin" ? "cashier" : "admin"}">Make ${s.role === "admin" ? "cashier" : "admin"}</button>
+        <button type="button" class="small-btn" data-staff-password="${escapeHtml(s.username)}">🔑 New password</button>
+        <button type="button" class="small-btn delete" data-staff-remove="${escapeHtml(s.username)}">🗑</button>
+      </div>
+    </div>`).join("")
+    : `<div class="empty-state small"><span>No staff yet. ${escapeHtml(vendor.name)}'s main login is the admin.</span></div>`;
+}
+
+async function staffAction(fn, okText) {
+  try {
+    await fn();
+  } catch (err) {
+    console.error("Staff change failed:", err);
+    const msg = String((err && err.message) || "");
+    toast(/taken|already|characters|only use|admin or cashier|no staff|own login/i.test(msg) ? msg : `Couldn't change staff. ${describeError(err)}`, "error", 8000);
+    return false;
+  }
+  toast(okText, "success");
+  await renderStaff();
+  return true;
+}
+
+$("staffBtn").addEventListener("click", openStaff);
+$("closeStaffBtn").addEventListener("click", () => $("staffDialog").close());
+$("staffRole").addEventListener("click", e => {
+  const b = e.target.closest("[data-role]");
+  if (!b) return;
+  staffRole = b.dataset.role;
+  document.querySelectorAll("#staffRole [data-role]").forEach(x => x.classList.toggle("active", x === b));
+});
+$("addStaffBtn").addEventListener("click", async () => {
+  const username = $("staffUser").value.trim().toLowerCase();
+  const password = $("staffPassword").value;
+  if (!username || username.endsWith(".")) return toast("Please type a user name, e.g. brewzy.ali", "error");
+  if (password.length < 6) return toast("The password needs at least 6 characters.", "error");
+  const ok = await staffAction(() => PosApi.createStaff(username, password, staffRole),
+    `Added ${username} as ${staffRole} ✓ They can log in now.`);
+  if (ok) { $("staffUser").value = `${vendor.username}.`; $("staffPassword").value = ""; }
+});
+$("staffList").addEventListener("click", e => {
+  const role = e.target.closest("[data-staff-role]");
+  if (role) return staffAction(() => PosApi.setStaffRole(role.dataset.staffRole, role.dataset.to), `${role.dataset.staffRole} is now ${role.dataset.to} ✓`);
+  const pw = e.target.closest("[data-staff-password]");
+  if (pw) {
+    const password = prompt(`New password for ${pw.dataset.staffPassword} (at least 6 characters):`);
+    if (password) staffAction(() => PosApi.resetStaffPassword(pw.dataset.staffPassword, password), `Password changed for ${pw.dataset.staffPassword} ✓`);
+    return;
+  }
+  const rm = e.target.closest("[data-staff-remove]");
+  if (rm && confirm(`Remove ${rm.dataset.staffRemove}? They won't be able to log in any more.`)) {
+    staffAction(() => PosApi.removeStaff(rm.dataset.staffRemove), `Removed ${rm.dataset.staffRemove}`);
+  }
+});
+
 // ---------- Tables ----------
 // The till opens on the Tables screen. Tapping a table opens its order; every
 // change is saved to the table's shared pending order, so all tills see the
@@ -2247,7 +2550,7 @@ async function loadTables() {
   try {
     tables = await PosApi.fetchTables();
     tablesFailed = false;
-    if (!tables.length) {
+    if (!tables.length && isAdmin()) {
       // First time for this vendor: start with Table 1 to Table 5.
       await PosApi.insertTables([1, 2, 3, 4, 5].map(n => ({ name: `Table ${n}`, sort: n })));
       tables = await PosApi.fetchTables();
@@ -2414,6 +2717,7 @@ async function saveTableOrder(order) {
 }
 
 async function addTable() {
+  if (!isAdmin()) return;
   const numbers = tables.map(t => Number((t.name.match(/\d+/) || [0])[0]));
   const n = (numbers.length ? Math.max(...numbers) : 0) + 1;
   const name = prompt("Name of the new table:", `Table ${n}`);
@@ -2490,9 +2794,26 @@ function adoptLegacyStore() {
   }
 }
 
+// Who's logged in: the vendor whose data they work on, and their role.
+async function resolveVendor(session) {
+  const basic = PosApi.vendorOf(session);
+  try {
+    const me = await PosApi.whoami();
+    const name = me.vendor_username.charAt(0).toUpperCase() + me.vendor_username.slice(1);
+    return { id: me.vendor_id, username: me.vendor_username, name, role: me.role, user: me.username };
+  } catch (err) {
+    console.warn("Couldn't read the login's role (staff migration not run yet?):", err);
+    return { ...basic, role: "admin", user: basic.username };
+  }
+}
+
+const isAdmin = () => Boolean(vendor && vendor.role === "admin");
+
 // Load this vendor's data on this till and start the POS.
-function startSession(session) {
-  vendor = PosApi.vendorOf(session);
+async function startSession(session) {
+  vendor = await resolveVendor(session);
+  document.body.classList.toggle("role-admin", isAdmin());
+  document.body.classList.toggle("role-cashier", !isAdmin());
   setVendor(vendor.username);
   adoptLegacyStore();
   products = readStore(PRODUCTS_CACHE_KEY, []);
@@ -2500,7 +2821,8 @@ function startSession(session) {
   pendingSales = readStore(PENDING_SALES_KEY, []);
   pendingDeletes = readStore(PENDING_DELETES_KEY, []);
   report.scope = readStore(REPORT_SCOPE_KEY, "main") === "expo" ? "expo" : "main";
-  $("vendorName").textContent = vendor.name;
+  $("vendorName").textContent = vendor.user && vendor.user !== vendor.username
+    ? `${vendor.user} (${vendor.name} ${isAdmin() ? "admin" : "cashier"})` : vendor.name;
   document.title = `${vendor.name} · Brewzy POS`;
   document.body.classList.remove("logged-out");
   restoreOrders();
@@ -2541,7 +2863,7 @@ $("loginForm").addEventListener("submit", async e => {
   try {
     const session = await PosApi.signIn(username, password);
     $("loginPassword").value = "";
-    startSession(session);
+    await startSession(session);
   } catch (err) {
     console.error("Login failed:", err);
     const msg = String((err && err.message) || "");
@@ -2574,4 +2896,4 @@ setInterval(tickClockTables, 30000);
 setInterval(checkConnection, 30000);
 PosApi.getSession()
   .then(session => (session ? startSession(session) : showLogin()))
-  .catch(() => showLogin());
+  .catch(err => { console.error("Start failed:", err); showLogin(); });

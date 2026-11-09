@@ -33,6 +33,8 @@ const {
   mergePendingItems,
   pendingSummary,
   setVendor,
+  cashCountTotal,
+  dayExpected,
 } = require("../pos-core.js");
 
 setVendor("brewzy"); // the Expo dates in these tests are Brewzy's
@@ -436,4 +438,21 @@ test("Expo dates belong to their vendor only", () => {
   setVendor("Brewzy");
   assert.equal(isExpoSale(sale), true);
   assert.deepEqual(expoPeriod(), { from: "2026-10-25", to: "2026-11-02" });
+});
+
+test("cash count adds notes, coins and loose change", () => {
+  assert.equal(cashCountTotal({ 1000: 2, 500: 1, 50: 3, 1: 4 }, 0.5), 2654.5);
+  assert.equal(cashCountTotal({}, ""), 0);
+  assert.equal(cashCountTotal({ 100: -2, 20: "3" }), 60); // negatives ignored, text counts
+});
+
+test("dayExpected totals a day's sales by payment method, leaving out voided and test sales", () => {
+  const e = dayExpected([
+    { payment_method: "Cash", total: 100, sale_date: "2026-11-09", created_at: "2026-11-09T10:00:00Z" },
+    { payment_method: "Cash", total: 50, voided: true, sale_date: "2026-11-09", created_at: "2026-11-09T10:00:00Z" },
+    { payment_method: "Transfer", total: 80, sale_date: "2026-11-09", created_at: "2026-11-09T10:00:00Z" },
+    { payment_method: "Card", total: 20.5, sale_date: "2026-11-09", created_at: "2026-11-09T10:00:00Z" },
+    { payment_method: "Cash", total: 999, sale_date: "2026-10-25", created_at: "2026-10-25T05:00:00Z" }, // Brewzy test sale
+  ]);
+  assert.deepEqual(e, { Cash: 100, Transfer: 80, Card: 20.5, count: 3 });
 });
