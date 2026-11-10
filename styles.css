@@ -965,3 +965,11 @@ body.super-mode .super-view { display: block; }
 .sv-row.staff { padding-left: 22px; }
 .sv-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .sv-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* Monthly profit (Main sales) */
+.month-nav { display: flex; align-items: center; gap: 8px; }
+.month-nav strong { min-width: 130px; text-align: center; font-size: 16px; }
+.month-nav button { padding: 6px 12px; }
+.main-bill-form { grid-template-columns: 150px minmax(0, 1fr) minmax(0, 0.8fr) 130px auto; }
+.bill-row .bill-where { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) { .main-bill-form { grid-template-columns: 1fr 1fr; } .main-bill-form .bill-desc, .main-bill-form .bill-actions { grid-column: 1 / -1; } }

@@ -6,9 +6,10 @@ completed sales are stored in Supabase, so every till shares one menu and
 daily reports are shared across devices.
 
 ## Features
-- **brewzy_bot bills:** the Telegram bills bot stores its `bills` in this database
-  (`2026-11-10-e-bot-bills.sql`). Brewzy's Main sales report shows them and a **Profit after bills** panel:
-  Main sales − item cost − bills = net profit, for the picked dates (admins only)
+- **Monthly profit and bills (Main sales):** bills (rent, salary, supplies…) are shared with the Telegram bills
+  bot *brewzy_bot*, whose `bills` table lives in this database (`2026-11-10-e-bot-bills.sql`). Brewzy's Main
+  sales report shows a **Monthly profit** panel (◀ month ▶): that month's sales − item cost − that month's bills
+  = net profit and margin, and a **Bills** section to add, edit and delete them (admins only)
 - **Super admin:** a super admin login (e.g. *brew*) opens a 🛡️ Super admin screen listing every vendor with its
   admins and cashiers; it can add vendors, rename any login, set passwords and change staff roles. It has no
   shop of its own. Run `2026-11-09-d-super-admin.sql`, then `select make_super_admin('brew', '<password>');`

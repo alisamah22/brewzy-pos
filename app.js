@@ -1500,7 +1500,15 @@ function renderReport() {
   const showBills = !expo && vendor && vendor.username === "brewzy";
   $("mainTotalsSection").hidden = !showBills;
   $("botBillsSection").hidden = !showBills;
-  if (showBills) loadBotBills(from, to, r);
+  if (showBills) {
+    // The month follows the picked dates (the "To" day) until ◀ ▶ is used.
+    if (monthly.followTo !== to || !monthly.month) {
+      monthly.followTo = to;
+      monthly.month = to.slice(0, 7);
+      resetMainBillForm();
+    }
+    loadMonthly();
+  }
   renderTransactions();
 }
 
@@ -2245,42 +2253,157 @@ document.addEventListener("keydown", e => {
 window.addEventListener("online", () => { if (vendor) { flushPending(); loadProducts(); } });
 window.addEventListener("offline", () => setOnline(false));
 
-// ---------- Bills from brewzy_bot in the Main report ----------
+// ---------- Monthly profit and bills (Main sales, Brewzy) ----------
+// Bills (rent, salary, supplies…) are shared with brewzy_bot. Each month's
+// bills are subtracted from that month's Main sales.
 
-let botBillsToken = 0;
-async function loadBotBills(from, to, r) {
-  const token = ++botBillsToken;
+const BOT_CHAT_ID = -5417102320; // brewzy_bot's group chat: bills added here show up in Telegram too
+const monthly = { month: "", followTo: "", bills: [], token: 0 };
+
+function monthRange(month) {
+  const [y, m] = month.split("-").map(Number);
+  return { from: `${month}-01`, to: localDateKey(new Date(y, m, 0)) };
+}
+
+function shiftMonth(month, by) {
+  const [y, m] = month.split("-").map(Number);
+  return localDateKey(new Date(y, m - 1 + by, 1)).slice(0, 7);
+}
+
+function monthName(month) {
+  return parseDateKey(`${month}-01`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+async function loadMonthly() {
+  const token = ++monthly.token;
+  const { from, to } = monthRange(monthly.month);
+  $("monthLabel").textContent = monthName(monthly.month);
+  $("mainBillsTitle").textContent = `🧾 Bills · ${monthName(monthly.month)}`;
+  let sales = [];
   let bills = [];
   let failed = "";
   try {
-    bills = await PosApi.fetchBotBillsInRange(from, to);
+    [sales, bills] = await Promise.all([PosApi.fetchSalesInRange(from, to), PosApi.fetchBotBillsInRange(from, to)]);
   } catch (err) {
-    console.error("Failed to load brewzy_bot bills:", err);
+    console.error("Failed to load the month:", err);
     failed = /bills/i.test(String(err && err.message)) && /exist|find|schema/i.test(String(err && err.message))
       ? "The bills table isn't set up yet: run 2026-11-10-e-bot-bills.sql." : describeError(err);
   }
-  if (token !== botBillsToken) return;
-  const billsTotal = sumExpenses(bills.map(b => ({ amount: b.price })));
+  if (token !== monthly.token) return;
+  const ids = new Set(sales.map(x => x.id));
+  sales = sales.concat(pendingSales.filter(x => x.sale_date >= from && x.sale_date <= to && !ids.has(x.id)));
+  monthly.bills = bills;
+  const r = aggregateSales(scopeSales(sales, "main"), currentCost);
+  const billsTotal = sumExpenses(bills.map(x => ({ amount: x.price })));
   const profit = PosCore.round2(r.grandTotal - r.costTotal - billsTotal);
   const box = (label, value, note, cls = "") =>
     `<div class="expo-total ${cls}"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;
   $("mainTotals").innerHTML = failed ? `<div class="notice error">⚠️ ${escapeHtml(failed)}</div>` :
-    box("Main sales", money(r.grandTotal), `${plural(r.transactionCount, "sale")} · ${plural(r.itemCount, "item")}`, "sales") +
+    box(`Sales · ${monthName(monthly.month)}`, money(r.grandTotal), `${plural(r.transactionCount, "sale")} · ${plural(r.itemCount, "item")}`, "sales") +
     box("− Item cost", money(r.costTotal), r.itemsMissingCost ? `${plural(r.itemsMissingCost, "item")} without a cost price` : "Cost price × qty sold") +
     box("− Bills", money(billsTotal), plural(bills.length, "bill")) +
     box("= Net profit", signedMoney(profit), r.grandTotal ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin` : "",
       profit < 0 ? "profit negative" : "profit");
-  $("botBillsNote").textContent = failed ? "" : `Added in Telegram · ${plural(bills.length, "bill")} for the dates above`;
-  $("botBillsBody").innerHTML = failed ? "" : bills.length ? bills.map(b => `
-    <tr>
-      <td>${escapeHtml(formatDay(b.date_paid, { weekday: "short", day: "numeric", month: "short" }))}</td>
-      <td>${escapeHtml(b.item)}</td>
-      <td>${escapeHtml(b.where_paid)}</td>
-      <td>${money(b.price)}</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="report-empty">No bills in these dates.</td></tr>`;
-  $("botBillsFoot").innerHTML = !failed && bills.length
-    ? `<tr><td>Total</td><td></td><td></td><td>${money(billsTotal)}</td></tr>` : "";
+  renderMainBills(failed);
 }
+
+function renderMainBills(failed = "") {
+  const bills = monthly.bills;
+  const editing = $("mbEditingId").value;
+  $("mbList").innerHTML = failed ? "" : bills.length ? `
+    <div class="bill-total"><span>${plural(bills.length, "bill")}</span><span>${money(sumExpenses(bills.map(x => ({ amount: x.price }))))}</span></div>` +
+    bills.map(x => `
+    <div class="bill-row ${String(x.id) === editing ? "editing" : ""}">
+      <span class="bill-date">${escapeHtml(formatDay(x.date_paid, { weekday: "short", day: "numeric", month: "short" }))}</span>
+      <span class="bill-what">${escapeHtml(x.item)} <span class="bill-where">· ${escapeHtml(x.where_paid)}</span></span>
+      <strong>${money(x.price)}</strong>
+      <span class="manage-actions">
+        <button type="button" class="small-btn" data-mb-edit="${x.id}">Edit</button>
+        <button type="button" class="small-btn delete" data-mb-delete="${x.id}" aria-label="Delete this bill">🗑</button>
+      </span>
+    </div>`).join("")
+    : `<div class="empty-state small"><span>No bills for ${escapeHtml(monthName(monthly.month))} yet. Add them above or in brewzy_bot.</span></div>`;
+}
+
+function resetMainBillForm() {
+  const { from, to } = monthRange(monthly.month);
+  const today = localDateKey();
+  $("mbEditingId").value = "";
+  $("mbDate").value = today >= from && today <= to ? today : to < today ? to : from;
+  $("mbItem").value = "";
+  $("mbWhere").value = "";
+  $("mbAmount").value = "";
+  $("mbSaveBtn").textContent = "Add bill";
+  $("mbCancelBtn").hidden = true;
+  $("mbForm").classList.remove("editing");
+}
+
+async function saveMainBill() {
+  const date = $("mbDate").value;
+  const item = $("mbItem").value.trim();
+  const amount = Number($("mbAmount").value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return toast("Please pick the date of the bill.", "error");
+  if (!item) return toast("Please say what the bill was for.", "error");
+  if (!(amount > 0)) return toast("Please enter the bill amount.", "error");
+  const fields = { date_paid: date, item, where_paid: $("mbWhere").value.trim() || "POS", price: amount };
+  const editing = $("mbEditingId").value;
+  const btn = $("mbSaveBtn");
+  btn.disabled = true;
+  try {
+    if (editing) await PosApi.updateBotBill(Number(editing), fields);
+    else await PosApi.insertBotBill({ ...fields, chat_id: BOT_CHAT_ID });
+  } catch (err) {
+    console.error("Failed to save bill:", err);
+    toast(`Couldn't save the bill. ${describeError(err)}`, "error", 8000);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  const outside = date.slice(0, 7) !== monthly.month;
+  toast(`${editing ? "Bill updated" : `Added ${money(amount)} bill`} ✓${outside ? ` (in ${monthName(date.slice(0, 7))})` : ""}`, "success");
+  resetMainBillForm();
+  await loadMonthly();
+}
+
+$("prevMonthBtn").addEventListener("click", () => { monthly.month = shiftMonth(monthly.month, -1); resetMainBillForm(); loadMonthly(); });
+$("nextMonthBtn").addEventListener("click", () => { monthly.month = shiftMonth(monthly.month, 1); resetMainBillForm(); loadMonthly(); });
+$("mbSaveBtn").addEventListener("click", saveMainBill);
+$("mbCancelBtn").addEventListener("click", () => { resetMainBillForm(); renderMainBills(); });
+$("mbForm").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); saveMainBill(); }
+});
+$("mbList").addEventListener("click", async e => {
+  const edit = e.target.closest("[data-mb-edit]");
+  if (edit) {
+    const x = monthly.bills.find(b => String(b.id) === edit.dataset.mbEdit);
+    if (!x) return;
+    $("mbEditingId").value = x.id;
+    $("mbDate").value = x.date_paid;
+    $("mbItem").value = x.item;
+    $("mbWhere").value = x.where_paid === "POS" ? "" : x.where_paid;
+    $("mbAmount").value = x.price;
+    $("mbSaveBtn").textContent = "Save bill";
+    $("mbCancelBtn").hidden = false;
+    $("mbForm").classList.add("editing");
+    renderMainBills();
+    $("mbItem").focus();
+    return;
+  }
+  const del = e.target.closest("[data-mb-delete]");
+  if (del) {
+    const x = monthly.bills.find(b => String(b.id) === del.dataset.mbDelete);
+    if (!x || !confirm(`Delete the ${money(x.price)} bill for "${x.item}"?`)) return;
+    try {
+      await PosApi.deleteBotBill(x.id);
+    } catch (err) {
+      console.error("Failed to delete bill:", err);
+      return toast(`Couldn't delete the bill. ${describeError(err)}`, "error", 8000);
+    }
+    toast("Bill deleted", "info");
+    if ($("mbEditingId").value === String(x.id)) resetMainBillForm();
+    await loadMonthly();
+  }
+});
 
 // ---------- Day closes in the report ----------
 

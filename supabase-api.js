@@ -255,7 +255,7 @@ async function fetchBotBillsInRange(fromKey, toKey) {
   for (let start = 0; ; start += PAGE_SIZE) {
     const { data, error } = await supabaseClient
       .from("bills")
-      .select("id,item,price,date_paid,where_paid")
+      .select("id,chat_id,item,price,date_paid,where_paid")
       .gte("date_paid", fromKey)
       .lte("date_paid", toKey)
       .order("date_paid", { ascending: false })
@@ -265,6 +265,21 @@ async function fetchBotBillsInRange(fromKey, toKey) {
     rows = rows.concat(data || []);
     if (!data || data.length < PAGE_SIZE) return rows;
   }
+}
+
+async function insertBotBill(bill) {
+  const { error } = await supabaseClient.from("bills").insert(bill);
+  if (error) throw error;
+}
+
+async function updateBotBill(id, fields) {
+  const { error } = await supabaseClient.from("bills").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteBotBill(id) {
+  const { error } = await supabaseClient.from("bills").delete().eq("id", id);
+  if (error) throw error;
 }
 
 // --- Day close (cash / transfer / card counted against the system) ---
@@ -300,6 +315,6 @@ window.PosApi = {
   fetchTables, insertTables, updateTable, deleteTable,
   whoami, listStaff, createStaff, setStaffRole, resetStaffPassword, removeStaff,
   superListLogins, superCreateVendor, superSetPassword, superSetRole, superRenameLogin,
-  fetchDayClosesInRange, saveDayClose, fetchBotBillsInRange,
+  fetchDayClosesInRange, saveDayClose, fetchBotBillsInRange, insertBotBill, updateBotBill, deleteBotBill,
   ping,
 };

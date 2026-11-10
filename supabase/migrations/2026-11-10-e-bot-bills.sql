@@ -5,8 +5,8 @@
 -- bot's own tables (same columns as its schema.sql), so the bot works
 -- unchanged once its SUPABASE_URL / SUPABASE_KEY point here. The bot uses the
 -- service_role key and bypasses these rules; in the POS app only Brewzy's
--- admins can see (and add) the bills, which the Main sales report subtracts
--- for the profit after bills.
+-- admins can see, add, edit and delete the bills; the Main sales report
+-- subtracts each month's bills from that month's sales.
 
 create table if not exists public.bills (
   id bigint generated always as identity primary key,
@@ -48,7 +48,14 @@ grant execute on function public.bot_vendor() to authenticated;
 
 drop policy if exists "brewzy admins read bills" on public.bills;
 drop policy if exists "brewzy admins add bills"  on public.bills;
+drop policy if exists "brewzy admins edit bills" on public.bills;
+drop policy if exists "brewzy admins delete bills" on public.bills;
 create policy "brewzy admins read bills" on public.bills for select to authenticated
   using ((select public.my_vendor()) = (select public.bot_vendor()) and (select public.is_admin()));
 create policy "brewzy admins add bills" on public.bills for insert to authenticated
   with check ((select public.my_vendor()) = (select public.bot_vendor()) and (select public.is_admin()));
+create policy "brewzy admins edit bills" on public.bills for update to authenticated
+  using ((select public.my_vendor()) = (select public.bot_vendor()) and (select public.is_admin()))
+  with check ((select public.my_vendor()) = (select public.bot_vendor()) and (select public.is_admin()));
+create policy "brewzy admins delete bills" on public.bills for delete to authenticated
+  using ((select public.my_vendor()) = (select public.bot_vendor()) and (select public.is_admin()));

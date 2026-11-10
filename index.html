@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body class="logged-out">
   <!-- Login: each vendor sees only their own menu, sales and reports -->
@@ -398,7 +398,14 @@
       </div>
 
       <section class="report-section" id="mainTotalsSection" hidden>
-        <div class="section-head"><h3>🏪 Profit after bills</h3><span class="muted">Bills from brewzy_bot for the dates above</span></div>
+        <div class="section-head">
+          <h3>🏪 Monthly profit</h3>
+          <div class="month-nav">
+            <button type="button" class="secondary" id="prevMonthBtn" aria-label="Previous month">◀</button>
+            <strong id="monthLabel"></strong>
+            <button type="button" class="secondary" id="nextMonthBtn" aria-label="Next month">▶</button>
+          </div>
+        </div>
         <div class="expo-totals" id="mainTotals"></div>
       </section>
 
@@ -501,14 +508,19 @@
       </section>
 
       <section class="report-section" id="botBillsSection" hidden>
-        <div class="section-head"><h3>🧾 Bills (brewzy_bot)</h3><span class="muted" id="botBillsNote">Added in Telegram · for the dates above</span></div>
-        <div class="report-table-wrap">
-          <table class="report-table" id="botBillsTable">
-            <thead><tr><th>Date</th><th>Item</th><th>Where paid</th><th>Amount</th></tr></thead>
-            <tbody id="botBillsBody"></tbody>
-            <tfoot id="botBillsFoot"></tfoot>
-          </table>
+        <div class="section-head"><h3 id="mainBillsTitle">🧾 Bills</h3><span class="muted">Rent, salary, utilities, supplies… also added from brewzy_bot in Telegram</span></div>
+        <div class="bill-form main-bill-form" id="mbForm">
+          <input type="hidden" id="mbEditingId" />
+          <label>Date <input id="mbDate" type="date" /></label>
+          <label class="bill-desc">What was it for? <input id="mbItem" placeholder="e.g. Rent" autocomplete="off" /></label>
+          <label>Where paid <span class="muted">(optional)</span> <input id="mbWhere" placeholder="e.g. Landlord" autocomplete="off" /></label>
+          <label>Amount (MVR) <input id="mbAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" /></label>
+          <div class="bill-actions">
+            <button type="button" class="secondary" id="mbCancelBtn" hidden>Cancel</button>
+            <button type="button" class="primary" id="mbSaveBtn">Add bill</button>
+          </div>
         </div>
+        <div id="mbList" class="bill-list"></div>
       </section>
 
       <section class="report-section" id="dayClosesSection">
@@ -531,9 +543,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=29"></script>
-<script src="supabase-api.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="pos-core.js?v=30"></script>
+<script src="supabase-api.js?v=30"></script>
+<script src="app.js?v=30"></script>
 
 </body>
 </html>
