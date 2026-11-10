@@ -144,6 +144,19 @@ Use a small local server (needed so the browser can load Supabase):
 - Python: `python -m http.server 8000`, then open `http://localhost:8000`
 - VS Code: the Live Server extension, then open `index.html`
 
+## Host on your own server and domain (e.g. Oracle Cloud)
+The website can also run on an Ubuntu server with nginx and HTTPS on your own domain; the data stays in Supabase.
+1. Create the server (Oracle Cloud: Ubuntu, Always Free shape) and allow **TCP 80 and 443** in its
+   VCN **Security List → Ingress rules**.
+2. At your domain's DNS, add an **A record** (e.g. `pos`) pointing to the server's public IP.
+3. On the server:
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/alisamah22/brewzy-pos/main/deploy/server-setup.sh
+   bash server-setup.sh pos.yourdomain.com you@example.com
+   ```
+   It installs nginx, gets the files from GitHub, sets up HTTPS (Let's Encrypt) and checks GitHub every
+   5 minutes, so pushing to `main` updates the site. Re-run it any time; it's safe.
+
 ## Deploy (GitHub Pages)
 1. Push to the default branch of your GitHub repo.
 2. Repo **Settings → Pages → Build and deployment**: Source = *Deploy from a
