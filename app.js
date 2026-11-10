@@ -1496,6 +1496,11 @@ function renderReport() {
   }
   $("dayClosesSection").hidden = expo;
   if (!expo) loadDayCloses(from, to);
+  // Bills from brewzy_bot belong to Brewzy: Main sales − item cost − bills.
+  const showBills = !expo && vendor && vendor.username === "brewzy";
+  $("mainTotalsSection").hidden = !showBills;
+  $("botBillsSection").hidden = !showBills;
+  if (showBills) loadBotBills(from, to, r);
   renderTransactions();
 }
 
@@ -2239,6 +2244,43 @@ document.addEventListener("keydown", e => {
 
 window.addEventListener("online", () => { if (vendor) { flushPending(); loadProducts(); } });
 window.addEventListener("offline", () => setOnline(false));
+
+// ---------- Bills from brewzy_bot in the Main report ----------
+
+let botBillsToken = 0;
+async function loadBotBills(from, to, r) {
+  const token = ++botBillsToken;
+  let bills = [];
+  let failed = "";
+  try {
+    bills = await PosApi.fetchBotBillsInRange(from, to);
+  } catch (err) {
+    console.error("Failed to load brewzy_bot bills:", err);
+    failed = /bills/i.test(String(err && err.message)) && /exist|find|schema/i.test(String(err && err.message))
+      ? "The bills table isn't set up yet: run 2026-11-10-e-bot-bills.sql." : describeError(err);
+  }
+  if (token !== botBillsToken) return;
+  const billsTotal = sumExpenses(bills.map(b => ({ amount: b.price })));
+  const profit = PosCore.round2(r.grandTotal - r.costTotal - billsTotal);
+  const box = (label, value, note, cls = "") =>
+    `<div class="expo-total ${cls}"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;
+  $("mainTotals").innerHTML = failed ? `<div class="notice error">⚠️ ${escapeHtml(failed)}</div>` :
+    box("Main sales", money(r.grandTotal), `${plural(r.transactionCount, "sale")} · ${plural(r.itemCount, "item")}`, "sales") +
+    box("− Item cost", money(r.costTotal), r.itemsMissingCost ? `${plural(r.itemsMissingCost, "item")} without a cost price` : "Cost price × qty sold") +
+    box("− Bills", money(billsTotal), plural(bills.length, "bill")) +
+    box("= Net profit", signedMoney(profit), r.grandTotal ? `${((profit / r.grandTotal) * 100).toFixed(1)}% margin` : "",
+      profit < 0 ? "profit negative" : "profit");
+  $("botBillsNote").textContent = failed ? "" : `Added in Telegram · ${plural(bills.length, "bill")} for the dates above`;
+  $("botBillsBody").innerHTML = failed ? "" : bills.length ? bills.map(b => `
+    <tr>
+      <td>${escapeHtml(formatDay(b.date_paid, { weekday: "short", day: "numeric", month: "short" }))}</td>
+      <td>${escapeHtml(b.item)}</td>
+      <td>${escapeHtml(b.where_paid)}</td>
+      <td>${money(b.price)}</td>
+    </tr>`).join("") : `<tr><td colspan="4" class="report-empty">No bills in these dates.</td></tr>`;
+  $("botBillsFoot").innerHTML = !failed && bills.length
+    ? `<tr><td>Total</td><td></td><td></td><td>${money(billsTotal)}</td></tr>` : "";
+}
 
 // ---------- Day closes in the report ----------
 

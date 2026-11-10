@@ -249,6 +249,24 @@ const superSetPassword = (username, password) => rpc("super_set_password", { use
 const superSetRole = (username, role) => rpc("super_set_role", { username, role });
 const superRenameLogin = (oldUsername, newUsername) => rpc("super_rename_login", { old_username: oldUsername, new_username: newUsername });
 
+// --- Bills from brewzy_bot (the Telegram bills bot) ---
+async function fetchBotBillsInRange(fromKey, toKey) {
+  let rows = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await supabaseClient
+      .from("bills")
+      .select("id,item,price,date_paid,where_paid")
+      .gte("date_paid", fromKey)
+      .lte("date_paid", toKey)
+      .order("date_paid", { ascending: false })
+      .order("id", { ascending: false })
+      .range(start, start + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows = rows.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) return rows;
+  }
+}
+
 // --- Day close (cash / transfer / card counted against the system) ---
 async function fetchDayClosesInRange(fromKey, toKey) {
   const { data, error } = await supabaseClient
@@ -282,6 +300,6 @@ window.PosApi = {
   fetchTables, insertTables, updateTable, deleteTable,
   whoami, listStaff, createStaff, setStaffRole, resetStaffPassword, removeStaff,
   superListLogins, superCreateVendor, superSetPassword, superSetRole, superRenameLogin,
-  fetchDayClosesInRange, saveDayClose,
+  fetchDayClosesInRange, saveDayClose, fetchBotBillsInRange,
   ping,
 };

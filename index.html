@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#ef6c35" />
   <title>Brewzy POS</title>
-  <link rel="stylesheet" href="styles.css?v=28" />
+  <link rel="stylesheet" href="styles.css?v=29" />
 </head>
 <body class="logged-out">
   <!-- Login: each vendor sees only their own menu, sales and reports -->
@@ -397,6 +397,11 @@
         <div class="report-card" id="reportAverageCard"><span>Average sale</span><strong id="reportAverage">MVR 0.00</strong></div>
       </div>
 
+      <section class="report-section" id="mainTotalsSection" hidden>
+        <div class="section-head"><h3>🏪 Profit after bills</h3><span class="muted">Bills from brewzy_bot for the dates above</span></div>
+        <div class="expo-totals" id="mainTotals"></div>
+      </section>
+
       <section class="report-section" id="expoTotalsSection" hidden>
         <div class="section-head"><h3>🎪 Whole Expo</h3><span class="muted" id="expoPeriodText"></span></div>
         <div class="expo-totals" id="expoTotals"></div>
@@ -495,6 +500,17 @@
         </div>
       </section>
 
+      <section class="report-section" id="botBillsSection" hidden>
+        <div class="section-head"><h3>🧾 Bills (brewzy_bot)</h3><span class="muted" id="botBillsNote">Added in Telegram · for the dates above</span></div>
+        <div class="report-table-wrap">
+          <table class="report-table" id="botBillsTable">
+            <thead><tr><th>Date</th><th>Item</th><th>Where paid</th><th>Amount</th></tr></thead>
+            <tbody id="botBillsBody"></tbody>
+            <tfoot id="botBillsFoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
       <section class="report-section" id="dayClosesSection">
         <div class="section-head"><h3>🧾 Day closes</h3><span class="muted">Counted against the system for the dates above</span></div>
         <div class="report-table-wrap">
@@ -515,9 +531,9 @@
   <div id="tooltip" class="chart-tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/dist/umd/supabase.min.js"></script>
-<script src="pos-core.js?v=28"></script>
-<script src="supabase-api.js?v=28"></script>
-<script src="app.js?v=28"></script>
+<script src="pos-core.js?v=29"></script>
+<script src="supabase-api.js?v=29"></script>
+<script src="app.js?v=29"></script>
 
 </body>
 </html>
