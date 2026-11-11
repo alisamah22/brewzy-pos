@@ -1,0 +1,10 @@
+// Cloudflare Workers static hosting for the POS website (poszy.com.co).
+// Cloudflare runs `npx wrangler deploy` on every push to main.
+// Files listed in .assetsignore (database scripts, tests, notes) aren't published.
+{
+  "name": "brewzy-pos",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "."
+  }
+}

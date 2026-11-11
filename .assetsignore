@@ -1,0 +1,14 @@
+.git
+.github
+.gitignore
+.gitattributes
+.assetsignore
+.claude
+wrangler.jsonc
+node_modules
+supabase
+deploy
+docs
+tests
+*.md
+*.sh
